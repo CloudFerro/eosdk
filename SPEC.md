@@ -294,6 +294,9 @@ to the SDK. Resolution order for the discovery URL itself:
 }
 ```
 
+`api_version` is optional per service (see §6.3): services whose protocol
+versioning is owned externally, such as Exos over S3, omit it.
+
 The document may additionally carry deprecation notices per service
 (`"deprecated": true, "sunset": "2027-01-01", "replacement": "..."`), which the
 SDK surfaces as warnings.
@@ -322,13 +325,21 @@ bust the cache.
   (e.g. ends in `/v1`), the SDK does **not** strip it — this is a configuration
   error that would produce `…/v1/v1`. `eo doctor` flags a base whose final path
   segment matches `v\d+` as a likely mistake.
-- When discovery advertises versions, the SDK checks compatibility at startup /
+- `api_version` is **optional** per service in the discovery document. Services
+  whose protocol versioning is owned externally (e.g. Exos over S3/boto3) omit it
+  and have no version-aware routes.
+- When `api_version` is **present**, the SDK checks compatibility at startup /
   first use and raises `UnsupportedApiVersion` with an actionable message
   ("zipper advertises v3; this SDK supports v1–v2 — upgrade eosdk or pin
   EOSDK_ZIPPER_URL"), instead of failing mid-download with a 404.
+- When `api_version` is **absent** (omitted from the document, or no discovery
+  document available), a version-aware module falls back to its **default
+  supported version** (the newest it implements) rather than failing. This is
+  also the Phase-1 path, before discovery exists.
 - Breaking service changes are absorbed inside modules via version-aware route
   tables (e.g. `ZipperV1Routes` / `ZipperV2Routes` selected by advertised
-  version); the public SDK surface does not change.
+  version, or the default version when none is advertised); the public SDK
+  surface does not change.
 
 ### 6.4 Auth (`eosdk.auth`)
 

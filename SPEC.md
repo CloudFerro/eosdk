@@ -70,7 +70,7 @@ that hides protocol and credential complexity behind one coherent interface:
 └───────┬───────┘   └────────┬─────────┘
         └──────────┬─────────┘
             ┌──────▼───────┐
-            │ Client facade │  search · download · auth      eosdk
+            │ Client facade │  search · list · download · auth   eosdk
             └──────┬───────┘
    ┌───────────────┼────────────────┐
 ┌──▼────────┐ ┌────▼───────┐ ┌──────▼──────┐
@@ -111,7 +111,7 @@ eosdk/
 ├── exceptions.py          # EosdkError (base); AuthError, ProductNotFound,
 │                          #   DownloadError, EndpointUnreachable,
 │                          #   UnsupportedApiVersion, UnsupportedQueryFeature,
-│                          #   QuotaExceeded
+│                          #   UnsupportedCapability, QuotaExceeded
 ├── config/
 │   ├── settings.py        # Endpoints + Profile models (pydantic)
 │   ├── loader.py          # resolution chain: kwargs > env (EOSDK_*) >
@@ -281,12 +281,19 @@ to the SDK. Resolution order for the discovery URL itself:
 
 ```json
 {
-  "version": "1.2",
+  "version": "1.0",
   "services": {
-    "catalogue":    { "stac": "https://catalogue.example.eu/stac",
-                      "odata": "https://catalogue.example.eu/odata",
-                      "api_version": "v1" },
-    "zipper":       { "url": "https://zipper.example.eu", "api_version": "v2" },
+    "catalogue":    { "stac": { "url": "https://catalogue.example.eu/stac" },
+                      "odata": { "url": "https://catalogue.example.eu/odata",
+                                 "api_version": "v1" } },
+    "zipper":       { "odata": { "url": "https://zipper.example.eu/odata",
+                                 "api_version": "v1",
+                                 "capabilities": ["download", "list"] },
+                      "resto": { "url": "https://zipper.example.eu/download",
+                                 "capabilities": ["download"],
+                                 "deprecated": true,
+                                 "sunset": "2027-01-01",
+                                 "replacement": "odata" } },
     "exos":         { "endpoint": "https://s3.example.eu", "region": "default" },
     "keys_manager": { "url": "https://keys.example.eu/api", "api_version": "v1" },
     "auth":         { "issuer": "https://auth.example.eu/realms/eodata" }
@@ -294,12 +301,28 @@ to the SDK. Resolution order for the discovery URL itself:
 }
 ```
 
-`api_version` is optional per service (see §6.3): services whose protocol
+A service that exposes several coexisting endpoint families advertises them as
+named **strategies** rather than a single `url` — here Zipper offers `odata`
+(current) and `resto` (deprecated, sunsetting). The module picks by its
+preference order and per-strategy deprecation (see §6.3); each strategy carries
+its own `url` and, where the SDK owns the version, its own `api_version`.
+
+A strategy may declare a `capabilities` list (`["download", "list", "open"]`) to
+**gate** what the SDK will attempt through it (§6.6) — e.g. `resto`:
+`["download"]`. This is optional: when absent, the SDK uses its built-in
+knowledge of that strategy's capabilities. It lets a deployment disable a
+capability without an SDK change.
+
+`api_version` is optional (see §6.3): services — or strategies — whose protocol
 versioning is owned externally, such as Exos over S3, omit it.
 
-The document may additionally carry deprecation notices per service
+The document may additionally carry deprecation notices
 (`"deprecated": true, "sunset": "2027-01-01", "replacement": "..."`), which the
-SDK surfaces as warnings.
+SDK surfaces as warnings. These may be declared per service or per **download
+strategy** where a service exposes several coexisting endpoint families (e.g.
+Zipper's `resto` strategy marked deprecated while `odata` is current — see §6.3),
+so the SDK can prefer the current strategy and warn only when it falls back to a
+sunsetting one.
 
 **Per-service standard discovery** (used with or without the platform document):
 
@@ -336,10 +359,32 @@ bust the cache.
   document available), a version-aware module falls back to its **default
   supported version** (the newest it implements) rather than failing. This is
   also the Phase-1 path, before discovery exists.
-- Breaking service changes are absorbed inside modules via version-aware route
-  tables (e.g. `ZipperV1Routes` / `ZipperV2Routes` selected by advertised
-  version, or the default version when none is advertised); the public SDK
-  surface does not change.
+- `api_version` governs only the **version within a route strategy**, which is a
+  separate axis from *which endpoint family* serves an operation. A single
+  service can expose several coexisting strategies — e.g. Zipper serves downloads
+  via both the modern `odata` strategy (the OData `$value` endpoint,
+  `/odata/v1/Products({id})/$value`) and the `resto` strategy (the legacy
+  `/download/{id}` endpoint that is being decommissioned). These are not versions
+  of each other.
+- A module holds an **ordered preference of strategies** and selects
+  **capability-first, then by preference**: for the requested operation, filter
+  to strategies that both (a) are available and not past `sunset` and (b) support
+  that capability (§6.6), then pick the highest-preference survivor. Zipper's
+  preference is `odata` first, `resto` as fallback — but `resto` supports only
+  the `download` capability, so it is a valid fallback for downloads and never
+  for `list`/`open`.
+  If no available strategy supports the requested capability, the SDK raises
+  `UnsupportedCapability` (§8) rather than silently degrading. If the selected
+  strategy is deprecated, the SDK emits a `DeprecationWarning` naming the sunset
+  date and replacement (see §6.2). Availability and deprecation come from
+  discovery; absent discovery (the Phase-1 path), the module defaults to its
+  first preference, overridable via config/env, with `eo doctor` surfacing an
+  unreachable choice.
+- Within the chosen strategy, `api_version` then selects the route template
+  (e.g. OData `$value` v1 vs a future v2). Breaking changes are absorbed inside
+  the module this way; the public SDK surface does not change. A genuinely
+  different download implementation is instead a new `Downloader` (§6.6) selected
+  by `via=` and registerable via the `eosdk.plugins` entry points (§11).
 
 ### 6.4 Auth (`eosdk.auth`)
 
@@ -381,10 +426,41 @@ declare which `CredentialsProvider` they need; the client wires it up.
 
 ### 6.6 Data access (`eosdk.eodata`)
 
-- `Downloader` protocol: `fetch(products, target, *, concurrency, resume,
-  checksum, progress)`; `products` accepts a single `Product` or an iterable of
-  `Product`; backend chosen via `via="zipper" | "exos"`.
-- Common capabilities implemented once in `base.py`, inherited by both backends:
+Backends are not uniform in what they can do, so capabilities are split into one
+required protocol plus optional ones; a backend (or strategy, §6.3) implements
+only what it supports:
+
+- `Downloader` **(required)** — the `download` capability: `fetch(products,
+  target, *, concurrency, resume, checksum, progress)` (facade: `client.download`
+  / `eo download`); `products` accepts a single `Product` or an iterable of
+  `Product`.
+- `Listable` *(optional)* — the `list` capability: `list(product, path="") ->
+  list[Node]` — traverses a product's **internal** file tree (the SAFE/archive
+  node structure), not the catalogue. Repository/product search stays the
+  catalogue's job (§6.5); this is the "what files are inside this product"
+  operation that enables selective and partial download.
+- `RandomAccess` *(optional)* — the `open` capability: `open(product, path) ->
+  file-like` — ranged reads of a single file inside a product, no full-product
+  transfer.
+
+Backend chosen via `via="zipper" | "exos"`. Capability names (`download`, `list`,
+`open`) are the vocabulary used in discovery `capabilities` (§6.2) and in
+`UnsupportedCapability`. Capability matrix:
+
+| Backend / strategy | `download` | `list` | `open` |
+|---|---|---|---|
+| Zipper `odata`     | ✓ | ✓ | - |
+| Zipper `resto`     | ✓ | — | — |
+| Exos (S3)          | ✓ | ✓ | ✓ |
+
+Requesting a capability a backend lacks raises `UnsupportedCapability` (§8); for
+Zipper this interacts with capability-aware strategy selection (§6.3) — `resto`
+is a valid fallback for `download` but never for `list`/`open`.
+
+- **`Node`** model — `name`, `path`, `size`, `is_dir`, `checksum` (optional,
+  when the backend provides it). Returned by `list()`; `path` values feed
+  `open()` and selective `fetch()`.
+- Common capabilities implemented once in `base.py`, inherited by all backends:
   - **Resume**: HTTP `Range` (Zipper) / ranged multipart GET (Exos).
   - **Retries**: exponential backoff with jitter (tenacity), idempotent-safe.
   - **Checksum verification** against catalogue metadata when available.
@@ -394,7 +470,7 @@ declare which `CredentialsProvider` they need; the client wires it up.
     ranges for large objects (Exos).
 - **Partial access** without full-product transfer:
   `client.open(product, path="GRANULE/.../B04.jp2", via="exos")` → file-like
-  object backed by ranged S3 GETs.
+  object backed by ranged S3 GETs
 - Zipper backend injects the JWT per request; Exos backend receives S3
   credentials from `S3KeysProvider` and never sees Keycloak tokens.
 
@@ -445,7 +521,10 @@ client.download(products, target="./data", via="zipper",
 
 client.download(products, target="./data", via="exos")   # S3 keys auto-managed
 
-with client.open(product, path="GRANULE/.../B04.jp2", via="exos") as f:
+nodes = client.list(product, via="zipper")   # files inside the product (odata strategy)
+band  = next(n for n in nodes if n.path.endswith("B04.jp2"))
+
+with client.open(product, path=band.path, via="exos") as f:
     data = f.read()                      # ranged read, no full download
 ```
 
@@ -527,6 +606,7 @@ Exception taxonomy (all inherit `EosdkError`):
 | `EndpointUnreachable` | connect/timeout on first use or doctor | service, URL, hint (profile/env var to check) |
 | `UnsupportedApiVersion` | advertised version outside supported range | service, advertised vs supported, remediation |
 | `UnsupportedQueryFeature` | Query construct not expressible in backend | backend, feature |
+| `UnsupportedCapability` | requested operation (`list`/`open`) unsupported by every available strategy of the chosen backend | backend, capability, which strategy/endpoint would provide it |
 | `ProductNotFound` | catalogue get/download miss | product id, backend |
 | `DownloadError` | transfer failure after retries | product, backend, last cause |
 | `QuotaExceeded` | service-side 429/quota | service, retry-after if provided |

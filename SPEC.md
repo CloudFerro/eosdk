@@ -108,8 +108,10 @@ Shared foundations (used by all domain modules): `transport`, `config`, `discove
 eosdk/
 ├── client.py              # Client facade — the one import most users need
 ├── models.py              # Product, Collection, SearchResult, Query (pydantic)
-├── exceptions.py          # AuthError, ProductNotFound, DownloadError,
-│                          #   EndpointUnreachable, UnsupportedApiVersion, QuotaExceeded
+├── exceptions.py          # EosdkError (base); AuthError, ProductNotFound,
+│                          #   DownloadError, EndpointUnreachable,
+│                          #   UnsupportedApiVersion, UnsupportedQueryFeature,
+│                          #   QuotaExceeded
 ├── config/
 │   ├── settings.py        # Endpoints + Profile models (pydantic)
 │   ├── loader.py          # resolution chain: kwargs > env (EOSDK_*) >
@@ -214,10 +216,10 @@ zipper   = "https://zipper-canary.example.eu"   # pinned; rest discovered
 
 [profiles.local]                                 # fully manual
 catalogue_stac  = "http://localhost:8081/stac"
-catalogue_odata = "http://localhost:8081/odata/v1"
+catalogue_odata = "http://localhost:8081/odata"
 zipper          = "http://localhost:8082"
 exos_endpoint   = "http://localhost:9000"
-keys_manager    = "http://localhost:8083/api/v1"
+keys_manager    = "http://localhost:8083/api"
 keycloak        = "http://localhost:8180"
 keycloak_realm  = "eodata"
 ```
@@ -226,9 +228,14 @@ keycloak_realm  = "eodata"
 with its source (`kwargs`, `env:EOSDK_ZIPPER_URL`, `profile:prod`, `discovery`,
 `default`); `eo config show` prints the same.
 
-**Validation** — URL syntax validated at `Client` construction (offline, cheap);
-reachability/capability checks deferred to first use of each service and to
-`eo doctor`.
+**Validation** — URL syntax of all *locally-known* endpoints (kwargs, env, config
+files) is validated at `Client` construction (offline, cheap). Endpoints that can
+only come from remote discovery (e.g. a profile defining just `platform`) are
+**not** fetched at construction; they are resolved and validated lazily on first
+use of the owning service, or eagerly via `client.discovery.refresh()`. Until
+resolved, `client.config.resolved()` reports such endpoints with source
+`discovery` and value `<pending>`. Reachability/capability checks are always
+deferred to first use of each service and to `eo doctor`.
 
 ### 6.2 Discovery (`eosdk.discovery`)
 
@@ -277,11 +284,11 @@ to the SDK. Resolution order for the discovery URL itself:
   "version": "1.2",
   "services": {
     "catalogue":    { "stac": "https://catalogue.example.eu/stac",
-                      "odata": "https://catalogue.example.eu/odata/v1",
+                      "odata": "https://catalogue.example.eu/odata",
                       "api_version": "v1" },
     "zipper":       { "url": "https://zipper.example.eu", "api_version": "v2" },
     "exos":         { "endpoint": "https://s3.example.eu", "region": "default" },
-    "keys_manager": { "url": "https://keys.example.eu/api/v1" },
+    "keys_manager": { "url": "https://keys.example.eu/api", "api_version": "v1" },
     "auth":         { "issuer": "https://auth.example.eu/realms/eodata" }
   }
 }
@@ -307,9 +314,14 @@ bust the cache.
 
 ### 6.3 API versioning
 
-- Users never put API versions in config. Each client module pins the API
-  version(s) it supports and appends path segments itself
+- Users never put API versions in config or discovery URLs. Service URLs are
+  **version-free bases**; each client module pins the API version(s) it supports
+  and appends the version segment itself via `route()`
   (e.g. `keys_manager` base + `/v1` lives in `auth/s3_keys.py`).
+- If a configured or discovered base already contains a version segment
+  (e.g. ends in `/v1`), the SDK does **not** strip it — this is a configuration
+  error that would produce `…/v1/v1`. `eo doctor` flags a base whose final path
+  segment matches `v\d+` as a likely mistake.
 - When discovery advertises versions, the SDK checks compatibility at startup /
   first use and raises `UnsupportedApiVersion` with an actionable message
   ("zipper advertises v3; this SDK supports v1–v2 — upgrade eosdk or pin
@@ -359,7 +371,8 @@ declare which `CredentialsProvider` they need; the client wires it up.
 ### 6.6 Data access (`eosdk.eodata`)
 
 - `Downloader` protocol: `fetch(products, target, *, concurrency, resume,
-  checksum, progress) `; backend chosen via `via="zipper" | "exos"`.
+  checksum, progress)`; `products` accepts a single `Product` or an iterable of
+  `Product`; backend chosen via `via="zipper" | "exos"`.
 - Common capabilities implemented once in `base.py`, inherited by both backends:
   - **Resume**: HTTP `Range` (Zipper) / ranged multipart GET (Exos).
   - **Retries**: exponential backoff with jitter (tenacity), idempotent-safe.
@@ -404,7 +417,8 @@ declare which `CredentialsProvider` they need; the client wires it up.
 ```python
 from eosdk import Client
 
-client = Client(profile="prod")          # lazy auth; config/env resolved
+client = Client(profile="prod")          # offline: local config/env resolved & validated;
+                                         # discovery-sourced endpoints resolved lazily on first use
 
 products = client.search(
     collection="SENTINEL-2",
@@ -451,7 +465,7 @@ raw  = cat.query_raw("Products?$filter=contains(Name,'S1A') and ...")
 
 keys = S3KeysProvider(auth=auth).get_or_create(label="my-pipeline")
 dl   = ExosDownloader(endpoint=..., credentials=keys)
-dl.fetch(product, target="/data", threads=8)
+dl.fetch(product, target="/data", concurrency=8)
 ```
 
 ### 7.4 CLI

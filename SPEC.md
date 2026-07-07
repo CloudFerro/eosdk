@@ -95,6 +95,10 @@ Shared foundations (used by all domain modules): `transport`, `config`, `discove
 
 - `cli` → `client` → domain modules (`catalogue`, `eodata`, `auth`) → `transport` /
   `config` / `discovery`. Never the reverse.
+- `config` may invoke `discovery` during endpoint resolution (precedence step 5,
+  §6.1); the potential cycle is broken by layering — discovery receives only the
+  bootstrap `platform` root (resolved from local sources: kwargs/env/file, never
+  from discovery) and returns endpoints. Discovery never reads config itself.
 - Domain modules **never** read config files or environment variables directly;
   they receive resolved endpoints and credential providers at construction time.
 - Domain modules **never** handle raw credentials; they ask the auth module for an
@@ -167,7 +171,9 @@ catalogue backends.
   when the catalogue provides it), plus the identifiers each download backend
   needs (S3 object path for Exos, product id/URL for Zipper). Raw backend payload
   retained under `Product.raw` for power users.
-- **`SearchResult`** — lazy iterator over `Product`; transparent pagination
+- **`SearchResult`** — lazy, **re-iterable** sequence of `Product`: pages are
+  fetched on demand and cached, so it can be traversed more than once (e.g.
+  downloaded, then inspected) without re-querying. Transparent pagination
   (STAC paging links / OData `$skiptoken` or `$skip`); `len()` where the backend
   provides a count; `.pages()` for page-wise access.
 - **`Collection`** — id, title, description, temporal/spatial extent.
@@ -307,6 +313,17 @@ named **strategies** rather than a single `url` — here Zipper offers `odata`
 preference order and per-strategy deprecation (see §6.3); each strategy carries
 its own `url` and, where the SDK owns the version, its own `api_version`.
 
+**Mapping to the `Endpoints` model.** The flat fields in §6.1 hold per-service
+*base* URLs; the nested discovery shape is projected onto them at parse time:
+`auth.issuer` → `keycloak` + `keycloak_realm` (split on `/realms/`),
+`exos.endpoint` / `region` → `exos_endpoint` / `exos_region`, and
+`catalogue.stac` / `.odata` → the two catalogue fields. A service with several
+strategies collapses onto its single base field (`zipper`): the SDK stores one
+base and appends each strategy's route template itself (§6.3). Precedence is
+resolved per service — a locally pinned base (kwargs/env/config, which beats
+discovery) is used together with the SDK's built-in strategy set; absent a pin,
+the discovered per-strategy `url`s are used directly.
+
 A strategy may declare a `capabilities` list (`["download", "list", "open"]`) to
 **gate** what the SDK will attempt through it (§6.6) — e.g. `resto`:
 `["download"]`. This is optional: when absent, the SDK uses its built-in
@@ -323,6 +340,12 @@ strategy** where a service exposes several coexisting endpoint families (e.g.
 Zipper's `resto` strategy marked deprecated while `odata` is current — see §6.3),
 so the SDK can prefer the current strategy and warn only when it falls back to a
 sunsetting one.
+
+**Document schema version** — the top-level `version` identifies the document
+*schema*, distinct from any service's `api_version`. The SDK supports a known
+major version; a document whose major version it does not recognize is rejected
+with a clear error rather than partially parsed. Unknown service or strategy keys
+are ignored, so the format stays forward-compatible.
 
 **Per-service standard discovery** (used with or without the platform document):
 
@@ -460,7 +483,8 @@ is a valid fallback for `download` but never for `list`/`open`.
 - **`Node`** model — `name`, `path`, `size`, `is_dir`, `checksum` (optional,
   when the backend provides it). Returned by `list()`; `path` values feed
   `open()` and selective `fetch()`.
-- Common capabilities implemented once in `base.py`, inherited by all backends:
+- Common transfer features implemented once in `base.py`, inherited by all
+  backends (distinct from the `download`/`list`/`open` **capabilities** above):
   - **Resume**: HTTP `Range` (Zipper) / ranged multipart GET (Exos).
   - **Retries**: exponential backoff with jitter (tenacity), idempotent-safe.
   - **Checksum verification** against catalogue metadata when available.
@@ -493,6 +517,10 @@ is a valid fallback for `download` but never for `list`/`open`.
   Exos connectivity).
 - Each domain module contributes its own probe, so a future access service
   brings its doctor check along with it.
+- Checks degrade gracefully: a section whose subsystem is not configured or not
+  yet shipped (e.g. **Discovery** / API-version checks before discovery lands in
+  §13 Phase 3) reports **skipped** with a reason instead of failing, so `eo
+  doctor` is useful from Phase 2 onward and never emits a false ✗.
 - CLI: `eo doctor [--profile X] [--json]`; human output with ✓/✗ and hints,
   `--json` for monitoring; non-zero exit code on any failure so it works as a
   pipeline pre-flight step (`eo doctor && eo download ...`).
@@ -518,11 +546,11 @@ products = client.search(
 
 client.download(products, target="./data", via="zipper",
                 concurrency=4, resume=True, checksum=True)
+# ...or fetch the same results over S3 instead: via="exos" (S3 keys auto-managed)
 
-client.download(products, target="./data", via="exos")   # S3 keys auto-managed
-
-nodes = client.list(product, via="zipper")   # files inside the product (odata strategy)
-band  = next(n for n in nodes if n.path.endswith("B04.jp2"))
+product = next(iter(products))               # SearchResult is re-iterable (pages cached)
+nodes   = client.list(product, via="zipper") # files inside the product (odata strategy)
+band    = next(n for n in nodes if n.path.endswith("B04.jp2"))
 
 with client.open(product, path=band.path, via="exos") as f:
     data = f.read()                      # ranged read, no full download
@@ -551,11 +579,12 @@ from eosdk.eodata import ExosDownloader
 
 auth = KeycloakAuth(url=..., realm=..., client_id=..., username=...)
 cat  = ODataCatalogue(base_url=..., auth=auth)
-raw  = cat.query_raw("Products?$filter=contains(Name,'S1A') and ...")
+raw  = cat.query_raw("Products?$filter=contains(Name,'S1A') and ...")  # escape hatch
+prod = cat.get("S2B_MSIL2A_20260615T095029_...")                       # normalized Product
 
 keys = S3KeysProvider(auth=auth).get_or_create(label="my-pipeline")
 dl   = ExosDownloader(endpoint=..., credentials=keys)
-dl.fetch(product, target="/data", concurrency=8)
+dl.fetch(prod, target="/data", concurrency=8)
 ```
 
 ### 7.4 CLI
@@ -606,7 +635,7 @@ Exception taxonomy (all inherit `EosdkError`):
 | `EndpointUnreachable` | connect/timeout on first use or doctor | service, URL, hint (profile/env var to check) |
 | `UnsupportedApiVersion` | advertised version outside supported range | service, advertised vs supported, remediation |
 | `UnsupportedQueryFeature` | Query construct not expressible in backend | backend, feature |
-| `UnsupportedCapability` | requested operation (`list`/`open`) unsupported by every available strategy of the chosen backend | backend, capability, which strategy/endpoint would provide it |
+| `UnsupportedCapability` | no available strategy of the chosen backend supports the requested capability (`download`/`list`/`open`) — usually `list`/`open`, or `download` when every strategy is past `sunset`/unavailable | backend, capability, which strategy/endpoint would provide it |
 | `ProductNotFound` | catalogue get/download miss | product id, backend |
 | `DownloadError` | transfer failure after retries | product, backend, last cause |
 | `QuotaExceeded` | service-side 429/quota | service, retry-after if provided |
@@ -633,7 +662,7 @@ config knob that fixes it.
 |---|---|---|
 | HTTP | `httpx` | one library for sync + async |
 | S3 | `boto3` / `aioboto3` | Exos backend |
-| Models/config | `pydantic` v2 | validation, TOML via `tomllib` |
+| Models/config | `pydantic` v2 | validation; TOML read `tomllib` (3.11+; `tomli` on 3.10), write `tomlkit` (round-trips comments/layout for `eo config init`/`set`) |
 | CLI | `typer` + `rich` | progress bars from the download callback |
 | Retries | `tenacity` | shared policy in transport |
 | STAC | thin custom client or `pystac-client` | decide in Phase 1 spike |

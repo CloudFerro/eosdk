@@ -29,6 +29,10 @@ def stac_item(uuid: str, name: str) -> dict[str, Any]:
     return item
 
 
+KEYS_MANAGER = "https://keys.example.eu/api"
+EXOS_ENDPOINT = "https://s3.us-east-1.amazonaws.com"  # moto intercepts AWS endpoints only
+
+
 def write_profile_config(path: Path) -> Path:
     path.write_text(
         'default_profile = "test"\n'
@@ -36,6 +40,9 @@ def write_profile_config(path: Path) -> Path:
         f'catalogue_stac = "{CATALOGUE}"\n'
         f'zipper = "{ZIPPER}"\n'
         f'keycloak = "{KEYCLOAK}"\n'
+        f'keys_manager = "{KEYS_MANAGER}"\n'
+        f'exos_endpoint = "{EXOS_ENDPOINT}"\n'
+        'exos_region = "us-east-1"\n'
     )
     return path
 

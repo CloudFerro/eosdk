@@ -69,22 +69,28 @@ def test_search_pending_endpoint_names_pin(tmp_path: Path) -> None:
         client.search(collection="SENTINEL-2")
 
 
-def test_download_via_exos_not_yet(tmp_path: Path) -> None:
+def test_open_via_zipper_is_unsupported_capability(client: Client) -> None:
     from eosdk.exceptions import UnsupportedCapability
     from eosdk.models import Product
 
-    config = write_profile_config(tmp_path / "config.toml")
-    with (
-        Client(profile="test", cwd=tmp_path, user_config=config) as client,
-        pytest.raises(UnsupportedCapability, match="exos"),
-    ):
-        client.download(Product(id="x", name="X"), target=".", via="exos")
+    with pytest.raises(UnsupportedCapability, match="open"):
+        client.open(Product(id="x", name="X"), path="a/b.jp2", via="zipper")
 
 
-def test_odata_protocol_honest_error(tmp_path: Path) -> None:
-    config = write_profile_config(tmp_path / "config.toml")
-    with (
-        Client(profile="test", cwd=tmp_path, user_config=config) as client,
-        pytest.raises(ConfigError, match="later release"),
-    ):
+def test_unknown_via_rejected(client: Client) -> None:
+    from eosdk.exceptions import UnsupportedCapability
+    from eosdk.models import Product
+
+    with pytest.raises(UnsupportedCapability, match="ftp"):
+        client.download(Product(id="x", name="X"), target=".", via="ftp")
+
+
+def test_odata_protocol_requires_endpoint(client: Client) -> None:
+    # profile has no catalogue_odata pinned -> actionable ConfigError, no HTTP
+    with pytest.raises(ConfigError, match="EOSDK_CATALOGUE_ODATA_URL"):
         client.search(collection="S1", protocol="odata")
+
+
+def test_unknown_protocol_rejected(client: Client) -> None:
+    with pytest.raises(ConfigError, match="unknown catalogue protocol"):
+        client.search(collection="S1", protocol="carrier-pigeon")

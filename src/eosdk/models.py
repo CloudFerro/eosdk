@@ -81,6 +81,21 @@ class Product(BaseModel):
     raw: dict[str, Any] = Field(default_factory=dict, repr=False)
 
 
+class Node(BaseModel):
+    """A file or directory inside a product's internal tree (SPEC §6.6).
+
+    ``path`` is logical and backend-agnostic (relative to the product root);
+    each backend translates it to its own addressing.
+    """
+
+    name: str
+    path: str
+    size: int | None = None
+    is_dir: bool = False
+    checksum: Checksum | None = None
+    raw: dict[str, Any] = Field(default_factory=dict, repr=False)
+
+
 class Collection(BaseModel):
     id: str
     title: str | None = None

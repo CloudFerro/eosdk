@@ -20,8 +20,9 @@ from eosdk.transport import RetryPolicy
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator
     from contextlib import AbstractContextManager
+    from typing import IO
 
-    from eosdk.models import Product
+    from eosdk.models import Node, Product
 
 
 EventKind = Literal["start", "chunk", "retry", "done", "error"]
@@ -67,6 +68,18 @@ class Downloader(Protocol):
         checksum: bool = True,
         progress: Callable[[ProgressEvent], None] | None = None,
     ) -> list[DownloadReport]: ...
+
+
+class Listable(Protocol):
+    """Optional `list` capability: a product's internal file tree (SPEC §6.6)."""
+
+    def list(self, product: Product, path: str = "", *, recursive: bool = False) -> list[Node]: ...
+
+
+class RandomAccess(Protocol):
+    """Optional `open` capability: ranged reads of one file inside a product."""
+
+    def open(self, product: Product, path: str) -> IO[bytes]: ...
 
 
 class BaseDownloader:

@@ -188,11 +188,21 @@ class Client:
 
     # -- public surface (SPEC §7.1) ---------------------------------------------
 
+    def _plugins(self) -> dict[str, Any]:
+        if not hasattr(self, "_plugin_registry"):
+            from eosdk.plugins import load_plugins
+
+            self._plugin_registry = load_plugins()
+        return self._plugin_registry
+
     def _catalogue(self, protocol: str) -> Catalogue:
         if protocol == "stac":
             return self._stac_catalogue()
         if protocol == "odata":
             return self._odata_catalogue()
+        plugin = self._plugins().get(protocol)
+        if plugin is not None and plugin.kind == "catalogue":
+            return plugin.factory(self)  # type: ignore[no-any-return]
         raise ConfigError(f"unknown catalogue protocol {protocol!r}", hint="use stac or odata")
 
     def _downloader(self, via: str, capability: Capability) -> Any:
@@ -200,6 +210,11 @@ class Client:
         from eosdk.eodata.capabilities import BUILTIN_MATRIX, select_strategy
 
         if via not in BUILTIN_MATRIX:
+            plugin = self._plugins().get(via)
+            if plugin is not None and plugin.kind == "downloader":
+                if plugin.strategies:
+                    select_strategy(via, capability, plugin.strategies)
+                return plugin.factory(self)
             raise UnsupportedCapability(backend=via, capability=capability.value)
         strategies = (
             self.discovery.strategies_for(via) if self.discovery.configured else BUILTIN_MATRIX[via]

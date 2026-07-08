@@ -149,9 +149,37 @@ def _services_section(client: Client) -> Section:
 
 def _discovery_section(client: Client) -> Section:
     section = Section("Discovery")
+    if not client.discovery.configured:
+        section.results.append(
+            _skip("platform document", "no platform root configured (manual endpoints)")
+        )
+        return section
+
+    def fetch() -> str:
+        document = client.discovery.document()
+        count = len(document.services)
+        return f"schema {document.version}, {count} services at {client.discovery.url}"
+
     section.results.append(
-        _skip("platform document", "remote discovery ships in a later release (Phase 3)")
+        _probe("platform document", fetch, hint="check platform / EOSDK_DISCOVERY_URL")
     )
+    try:
+        from eosdk.versions import SUPPORTED_VERSIONS, select_version
+
+        for service_key in SUPPORTED_VERSIONS:
+            advertised = client.discovery.api_version_for(service_key)
+            if advertised is None:
+                continue
+            select_version(service_key, advertised)
+            section.results.append(
+                CheckResult(f"{service_key} api", True, f"advertised {advertised} is supported")
+            )
+    except EosdkError as exc:
+        section.results.append(
+            CheckResult("api versions", False, str(exc), hint="upgrade eosdk or pin the URL")
+        )
+    except Exception:  # document unreachable: already reported above
+        pass
     return section
 
 

@@ -57,14 +57,24 @@ def test_search_then_download_end_to_end(
     assert all(c.request.headers["Authorization"] == "Bearer JWT-AT" for c in zipper_calls)
 
 
-def test_search_pending_endpoint_names_pin(tmp_path: Path) -> None:
+@respx.mock
+def test_search_pending_endpoint_with_unreachable_discovery(tmp_path: Path) -> None:
+    import httpx
+
+    from eosdk.exceptions import EndpointUnreachable
+
+    respx.get("https://platform.example.eu/.well-known/eo-services.json").mock(
+        side_effect=httpx.ConnectError("down")
+    )
     with (
         Client(
             platform="https://platform.example.eu",
             cwd=tmp_path,
             user_config=tmp_path / "missing.toml",
+            discovery_cache_dir=tmp_path / "discovery",
         ) as client,
-        pytest.raises(ConfigError, match="EOSDK_CATALOGUE_STAC_URL"),
+        # pending endpoint triggers lazy discovery; unreachable -> actionable error
+        pytest.raises(EndpointUnreachable, match="EOSDK_DISCOVERY_URL"),
     ):
         client.search(collection="SENTINEL-2")
 

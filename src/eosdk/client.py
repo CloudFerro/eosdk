@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from eosdk.catalogue.odata import ODataCatalogue
     from eosdk.catalogue.stac import StacCatalogue
     from eosdk.config import ResolvedConfig
+    from eosdk.discovery.resolver import DiscoveryResolver
     from eosdk.eodata.base import DownloadReport, ProgressEvent
     from eosdk.eodata.capabilities import Capability
     from eosdk.eodata.exos import ExosDownloader
@@ -47,6 +48,7 @@ class Client:
         user_config: Path | None = None,
         token_cache_dir: Path | None = None,
         keys_cache_dir: Path | None = None,
+        discovery_cache_dir: Path | None = None,
     ) -> None:
         self.config: ResolvedConfig = load(
             kwargs_endpoints=endpoints,
@@ -61,12 +63,47 @@ class Client:
         )
         self._token_cache_dir = token_cache_dir
         self._keys_cache_dir = keys_cache_dir
+        self._discovery_cache_dir = discovery_cache_dir
+        self._discovery: DiscoveryResolver | None = None
         self._auth: KeycloakAuth | None = None
         self._stac: StacCatalogue | None = None
         self._odata: ODataCatalogue | None = None
         self._zipper: ZipperDownloader | None = None
         self._exos: ExosDownloader | None = None
         self._keys: S3KeysProvider | None = None
+
+    # -- discovery (SPEC §6.2): fetched lazily on first pending-endpoint use ---
+
+    @property
+    def discovery(self) -> DiscoveryResolver:
+        if self._discovery is None:
+            from eosdk.discovery.resolver import DiscoveryResolver
+
+            self._discovery = DiscoveryResolver(
+                platform=self.config.platform,
+                discovery_url=self.config.endpoints.discovery_url,
+                transport=self._transport,
+                cache_dir=self._discovery_cache_dir,
+            )
+        return self._discovery
+
+    def _endpoint(self, fieldname: str, *, service: str) -> str:
+        """Resolve an endpoint, triggering lazy discovery for <pending> fields."""
+        try:
+            return self.config.require(fieldname, service=service)
+        except ConfigError:
+            if not self.discovery.configured:
+                raise
+            self.config.apply_discovered(self.discovery.endpoints())
+            return self.config.require(fieldname, service=service)
+
+    def _check_api_version(self, service_key: str) -> None:
+        from eosdk.versions import select_version
+
+        advertised = (
+            self.discovery.api_version_for(service_key) if self.discovery.configured else None
+        )
+        select_version(service_key, advertised)
 
     # -- lazy service accessors (SPEC §6.1: nothing fetched at construction) ---
 
@@ -76,7 +113,7 @@ class Client:
             from eosdk.auth.keycloak import KeycloakAuth
 
             self._auth = KeycloakAuth(
-                url=self.config.require("keycloak", service="keycloak"),
+                url=self._endpoint("keycloak", service="keycloak"),
                 realm=self.config.endpoints.keycloak_realm,
                 client_id=self.config.endpoints.keycloak_client_id,
                 transport=self._transport,
@@ -90,7 +127,7 @@ class Client:
             from eosdk.catalogue.stac import StacCatalogue
 
             self._stac = StacCatalogue(
-                self.config.require("catalogue_stac", service="catalogue_stac"),
+                self._endpoint("catalogue_stac", service="catalogue_stac"),
                 transport=self._transport,
                 auth=self.auth,
             )
@@ -100,21 +137,24 @@ class Client:
         if self._odata is None:
             from eosdk.catalogue.odata import ODataCatalogue
 
+            self._check_api_version("catalogue/odata")
             self._odata = ODataCatalogue(
-                self.config.require("catalogue_odata", service="catalogue_odata"),
+                self._endpoint("catalogue_odata", service="catalogue_odata"),
                 transport=self._transport,
                 auth=self.auth,
             )
         return self._odata
 
-    def _zipper_downloader(self) -> ZipperDownloader:
+    def _zipper_downloader(self, strategy: str | None = None) -> ZipperDownloader:
         if self._zipper is None:
             from eosdk.eodata.zipper import ZipperDownloader
 
+            self._check_api_version("zipper/odata")
             self._zipper = ZipperDownloader(
-                self.config.require("zipper", service="zipper"),
+                self._endpoint("zipper", service="zipper"),
                 transport=self._transport,
                 auth=self.auth,
+                strategy=strategy,
             )
         return self._zipper
 
@@ -122,9 +162,11 @@ class Client:
         if self._keys is None:
             from eosdk.auth.s3_keys import S3KeysProvider
 
+            self._check_api_version("keys_manager")
+
             self._keys = S3KeysProvider(
                 auth=self.auth,
-                base_url=self.config.require("keys_manager", service="keys_manager"),
+                base_url=self._endpoint("keys_manager", service="keys_manager"),
                 transport=self._transport,
                 profile=self.config.profile or "default",
                 cache_dir=self._keys_cache_dir,
@@ -137,7 +179,7 @@ class Client:
             from eosdk.eodata.exos import ExosDownloader
 
             self._exos = ExosDownloader(
-                self.config.require("exos_endpoint", service="exos"),
+                self._endpoint("exos_endpoint", service="exos"),
                 region=self.config.endpoints.exos_region,
                 credentials=self._keys_provider(),
                 verify=self.config.verify_tls,
@@ -159,10 +201,13 @@ class Client:
 
         if via not in BUILTIN_MATRIX:
             raise UnsupportedCapability(backend=via, capability=capability.value)
-        # Phase 2: strategies come from the built-in matrix; discovery plugs in
-        # here in Phase 3 without changing callers.
-        select_strategy(via, capability, BUILTIN_MATRIX[via])
-        return self._zipper_downloader() if via == "zipper" else self._exos_downloader()
+        strategies = (
+            self.discovery.strategies_for(via) if self.discovery.configured else BUILTIN_MATRIX[via]
+        )
+        chosen = select_strategy(via, capability, strategies)
+        if via == "zipper":
+            return self._zipper_downloader(strategy=chosen.name)
+        return self._exos_downloader()
 
     def search(
         self,

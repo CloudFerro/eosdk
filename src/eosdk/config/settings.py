@@ -117,6 +117,21 @@ class ResolvedConfig:
         """Endpoint -> (value, source) mapping (SPEC §6.1 introspection)."""
         return dict(self.sources)
 
+    def apply_discovered(self, projected: dict[str, str]) -> None:
+        """Fill ``<pending>`` fields from a fetched discovery document.
+
+        Only fields whose source is ``discovery`` and value is still unset are
+        touched — locally pinned values are final and never re-consulted
+        (SPEC §6.1/§6.2 per-service precedence).
+        """
+        for fieldname, value in projected.items():
+            current = self.sources.get(fieldname)
+            if current is None or current.source != "discovery" or current.value is not None:
+                continue
+            validated = URL_ADAPTER.validate_python(value) if fieldname in URL_FIELDS else value
+            self.sources[fieldname] = ResolvedValue(validated, "discovery")
+            setattr(self.endpoints, fieldname, validated)
+
     def require(self, fieldname: str, *, service: str) -> str:
         """Return the endpoint for ``service`` or raise with the exact fix knob."""
         resolved = self.sources.get(fieldname)

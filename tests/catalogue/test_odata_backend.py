@@ -60,9 +60,7 @@ class TestSearch:
         page2, page3 = f"{PRODUCTS}?$skiptoken=2", f"{PRODUCTS}?$skiptoken=3"
         mock = respx.get(url__startswith=PRODUCTS).mock(
             side_effect=[
-                httpx.Response(
-                    200, json=page([odata_entry("u1", "P1")], count=3, next_link=page2)
-                ),
+                httpx.Response(200, json=page([odata_entry("u1", "P1")], count=3, next_link=page2)),
                 httpx.Response(200, json=page([odata_entry("u2", "P2")], next_link=page3)),
                 httpx.Response(200, json=page([odata_entry("u3", "P3")])),
             ]

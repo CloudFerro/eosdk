@@ -22,6 +22,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
+    "boto3>=1.34",
     "httpx>=0.27",
     "pydantic>=2.7",
     "typer>=0.12",
@@ -66,6 +67,10 @@ runtime-evaluated-base-classes = ["pydantic.BaseModel"]
 strict = true
 python_version = "3.10"
 files = ["src/eosdk"]
+
+[[tool.mypy.overrides]]
+module = ["boto3.*", "botocore.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

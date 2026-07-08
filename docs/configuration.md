@@ -1,0 +1,62 @@
+# Configuration
+
+Endpoints resolve per field, most specific wins:
+
+1. explicit kwargs to `Client(...)`
+2. environment variables `EOSDK_*` (e.g. `EOSDK_ZIPPER_URL`, `EOSDK_PROFILE`)
+3. project-local `./eosdk.toml`
+4. user config `~/.config/eosdk/config.toml` (selected profile)
+5. remote discovery document (when a `platform` root is configured)
+6. built-in defaults (the Copernicus Data Space Ecosystem)
+
+`eo config show` (or `client.config.resolved()`) prints every endpoint with
+the source that provided it. Endpoints that only discovery can provide show
+`<pending>` until the owning service is first used.
+
+## Profiles
+
+```toml
+default_profile = "prod"
+
+[profiles.prod]
+platform = "https://platform.example.eu"     # single root; rest discovered
+
+[profiles.staging]
+platform = "https://staging.example.eu"
+zipper   = "https://zipper-canary.example.eu" # pinned; pins beat discovery
+
+[profiles.local]                              # fully manual
+catalogue_stac  = "http://localhost:8081/stac"
+catalogue_odata = "http://localhost:8081/odata"
+zipper          = "http://localhost:8082"
+exos_endpoint   = "http://localhost:9000"
+keys_manager    = "http://localhost:8083/api"
+keycloak        = "http://localhost:8180"
+keycloak_realm  = "eodata"
+```
+
+Manage from the CLI: `eo config init`, `eo config set profiles.staging.zipper
+https://...`, `eo config use staging`, `eo config profiles`. Writes preserve
+comments and layout.
+
+## Environment variables
+
+| Variable | Meaning |
+|---|---|
+| `EOSDK_PROFILE` | profile to use |
+| `EOSDK_PLATFORM` | platform root for discovery |
+| `EOSDK_CATALOGUE_STAC_URL`, `EOSDK_CATALOGUE_ODATA_URL` | catalogue bases |
+| `EOSDK_ZIPPER_URL`, `EOSDK_EXOS_ENDPOINT`, `EOSDK_EXOS_REGION` | data access |
+| `EOSDK_KEYS_MANAGER_URL` | S3 keys manager base |
+| `EOSDK_KEYCLOAK_URL`, `EOSDK_KEYCLOAK_REALM`, `EOSDK_KEYCLOAK_CLIENT_ID` | auth |
+| `EOSDK_DISCOVERY_URL` | explicit discovery document URL |
+| `EOSDK_TLS_VERIFY` | set `0` to disable TLS verification (dev only) |
+
+Base URLs are **version-free**: the SDK appends `/v1`-style segments itself.
+`eo doctor` flags bases that end in a version segment.
+
+## Security
+
+Tokens, S3 secrets, and cached discovery documents live under
+`~/.config/eosdk/` with mode `0600`, separated per profile. Secrets are never
+printed except via the explicit `eo keys create --export`.

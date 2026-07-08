@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --group dev --python ${{ matrix.python }}
+      - run: uv run ruff check .
+      - run: uv run mypy
+      - run: uv run pytest
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # PyPI Trusted Publishing (OIDC) — no long-lived secrets
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv build
+      - run: uvx twine check dist/*
+      # rc tags go to TestPyPI; final tags to PyPI.
+      # NOTE: requires the Trusted Publisher to be configured on (Test)PyPI
+      # for this repository, and the license decision (SPEC §14.8) resolved.
+      - name: Publish to TestPyPI (rc tags)
+        if: contains(github.ref_name, 'rc')
+        run: uv publish --publish-url https://test.pypi.org/legacy/
+      - name: Publish to PyPI (final tags)
+        if: ${{ !contains(github.ref_name, 'rc') }}
+        run: uv publish
+      - name: GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

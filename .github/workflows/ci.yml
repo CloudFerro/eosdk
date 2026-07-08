@@ -32,6 +32,14 @@ jobs:
       - run: uv sync --group dev --python ${{ matrix.python }}
       - run: uv run pytest --cov=eosdk --cov-report=term
 
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --group docs
+      - run: uv run --group docs mkdocs build --strict
+
   build:
     runs-on: ubuntu-latest
     steps:

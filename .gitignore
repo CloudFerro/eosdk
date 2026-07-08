@@ -24,3 +24,6 @@ htmlcov/
 
 # Local project config (user-specific)
 eosdk.toml
+
+# Docs
+site/

@@ -1,0 +1,37 @@
+site_name: eosdk
+site_description: Python SDK and CLI for Earth Observation services
+repo_url: https://github.com/cloudferro/eosdk # TODO: confirm hosting (SPEC §14.8)
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - content.code.copy
+  palette:
+    - scheme: default
+      primary: teal
+      toggle: { icon: material/brightness-7, name: dark mode }
+    - scheme: slate
+      primary: teal
+      toggle: { icon: material/brightness-4, name: light mode }
+
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - Configuration: configuration.md
+  - CLI reference: cli.md
+  - Errors: errors.md
+  - API reference: reference.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: sphinx
+            show_source: false
+
+markdown_extensions:
+  - admonition
+  - pymdownx.superfences
+  - pymdownx.tabbed

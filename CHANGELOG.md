@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased (Phase 4 — hardening)
+
+### Added
+- Documentation site (mkdocs-material + mkdocstrings): quickstart,
+  configuration, CLI and API reference, error taxonomy; built `--strict` in CI.
+- Live smoke suite (`tests/smoke`, gated by `EOSDK_SMOKE=1`); the anonymous
+  half (STAC/OData search, cross-protocol agreement, doctor probes) verified
+  against the live CDSE platform. Authenticated half awaits credentials.
+- Bulk-download benchmark harness (`benchmarks/bench_download.py`).
+- Release workflow: tag-triggered test matrix -> build -> PyPI Trusted
+  Publishing (rc tags to TestPyPI) -> GitHub release; `RELEASING.md` tracks the
+  pre-1.0 checklist (license decision and platform credentials still open).
+
+
 ## 0.3.0 (Phase 3 — platform)
 
 ### Added

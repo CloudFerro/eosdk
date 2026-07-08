@@ -1,0 +1,33 @@
+{
+  "type": "Feature",
+  "stac_version": "1.0.0",
+  "id": "S2B_MSIL2A_20260615T095029_N0511_R079_T34UEE_20260615T105512.SAFE",
+  "collection": "SENTINEL-2",
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [[[22.5, 52.9], [24.0, 52.9], [24.0, 53.5], [22.5, 53.5], [22.5, 52.9]]]
+  },
+  "bbox": [22.5, 52.9, 24.0, 53.5],
+  "properties": {
+    "datetime": "2026-06-15T09:50:29Z",
+    "eo:cloud_cover": 12.4,
+    "eodata:uuid": "f9d8a1c2-3b4e-5f60-7a8b-9c0d1e2f3a4b",
+    "platform": "sentinel-2b"
+  },
+  "assets": {
+    "PRODUCT": {
+      "href": "https://zipper.example.eu/odata/v1/Products(f9d8a1c2-3b4e-5f60-7a8b-9c0d1e2f3a4b)/$value",
+      "type": "application/zip",
+      "file:size": 1207959552,
+      "file:checksum": "d5109e107d9d372bb6826bd81d3542a419d6",
+      "alternate": {
+        "s3": {
+          "href": "/eodata/Sentinel-2/MSI/L2A/2026/06/15/S2B_MSIL2A_20260615T095029_N0511_R079_T34UEE_20260615T105512.SAFE"
+        }
+      }
+    }
+  },
+  "links": [
+    {"rel": "self", "href": "https://catalogue.example.eu/stac/collections/SENTINEL-2/items/S2B_MSIL2A_20260615T095029_N0511_R079_T34UEE_20260615T105512.SAFE"}
+  ]
+}

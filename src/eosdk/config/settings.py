@@ -49,8 +49,15 @@ class Endpoints(BaseModel):
 
 
 URL_FIELDS = frozenset(
-    {"catalogue_stac", "catalogue_odata", "zipper", "exos_endpoint", "keys_manager",
-     "keycloak", "discovery_url"}
+    {
+        "catalogue_stac",
+        "catalogue_odata",
+        "zipper",
+        "exos_endpoint",
+        "keys_manager",
+        "keycloak",
+        "discovery_url",
+    }
 )
 
 

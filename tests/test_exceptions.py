@@ -78,9 +78,7 @@ def test_unsupported_query_feature_names_backend() -> None:
 
 
 def test_unsupported_capability_names_alternative() -> None:
-    err = UnsupportedCapability(
-        backend="zipper", capability="open", alternative="use via='exos'"
-    )
+    err = UnsupportedCapability(backend="zipper", capability="open", alternative="use via='exos'")
     assert "zipper" in str(err)
     assert "open" in str(err)
     assert "exos" in str(err)

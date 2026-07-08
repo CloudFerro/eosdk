@@ -76,9 +76,7 @@ def test_post_not_retried_by_default() -> None:
 
 @respx.mock
 def test_429_honors_retry_after_then_raises_quota() -> None:
-    respx.get(f"{BASE}/x").mock(
-        return_value=httpx.Response(429, headers={"Retry-After": "7"})
-    )
+    respx.get(f"{BASE}/x").mock(return_value=httpx.Response(429, headers={"Retry-After": "7"}))
     t = make_transport()
     with pytest.raises(QuotaExceeded) as exc_info:
         t.request("GET", f"{BASE}/x", service="zipper")

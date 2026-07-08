@@ -73,9 +73,7 @@ class UnsupportedApiVersion(EosdkError):
         self.service = service
         self.advertised = advertised
         self.supported = supported
-        message = (
-            f"{service} advertises API version {advertised}; this eosdk supports {supported}"
-        )
+        message = f"{service} advertises API version {advertised}; this eosdk supports {supported}"
         if remediation is not None:
             message = f"{message} — {remediation}"
         super().__init__(message)

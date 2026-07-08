@@ -10,7 +10,9 @@ import typer
 from eosdk.cli import _state
 from eosdk.cli.commands.auth import auth_app
 from eosdk.cli.commands.config import config_app
+from eosdk.cli.commands.doctor import doctor
 from eosdk.cli.commands.download import download
+from eosdk.cli.commands.keys import keys_app
 from eosdk.cli.commands.search import search
 
 app = typer.Typer(
@@ -41,8 +43,10 @@ def main(
 
 app.add_typer(auth_app, name="auth", help="Login, logout, session status.")
 app.add_typer(config_app, name="config", help="Profiles and resolved endpoints.")
+app.add_typer(keys_app, name="keys", help="S3 key lifecycle (create, list, revoke).")
 app.command("search")(search)
 app.command("download")(download)
+app.command("doctor")(doctor)
 
 
 if __name__ == "__main__":

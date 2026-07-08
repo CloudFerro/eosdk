@@ -29,6 +29,7 @@ class CliState:
     cwd: Path | None = None
     user_config: Path | None = None
     token_cache_dir: Path | None = None
+    keys_cache_dir: Path | None = None
 
 
 def get_state(ctx: typer.Context) -> CliState:
@@ -43,6 +44,7 @@ def build_client(state: CliState) -> Client:
         cwd=state.cwd,
         user_config=state.user_config,
         token_cache_dir=state.token_cache_dir,
+        keys_cache_dir=state.keys_cache_dir,
     )
 
 

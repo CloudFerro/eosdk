@@ -12,14 +12,24 @@ driven selection replaces the static preference in Phase 3.
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, ClassVar
+from urllib.parse import quote
 
 from eosdk.eodata.base import BaseDownloader
 from eosdk.exceptions import ProductNotFound, QuotaExceeded
-from eosdk.transport import RetryPolicy, route
+from eosdk.models import Node
+from eosdk.transport import RetryPolicy, odata_key, route
+
+
+def _quote_segment(segment: str) -> str:
+    """OData-key-quote a node name, then percent-encode for URL safety."""
+    return quote(odata_key(segment), safe="'()")
+
 
 if TYPE_CHECKING:
+    import builtins
     from collections.abc import Callable, Iterable, Iterator
     from pathlib import Path
 
@@ -39,6 +49,7 @@ ROUTES = {
         "product": "odata/v1/Products({id})/$value",
         "product_zip": "odata/v1/Products({id})/$zip",  # reserved: compressed products (risk R3)
         "node": "odata/v1/Products({id})/Nodes({name})/$value",
+        "nodes_root": "odata/v1/Products({id})/Nodes",
     }
 }
 
@@ -132,3 +143,70 @@ class ZipperDownloader(BaseDownloader):
             checksum=checksum,
             progress=progress,
         )
+
+    # -- list (SPEC §6.6 Listable): Nodes hierarchy, one request per directory ---
+
+    def _nodes_url(self, product: Product, path: str) -> str:
+        """Address a directory: Products({id})/Nodes(a)/Nodes(b)/.../Nodes.
+
+        Every name segment goes through :func:`odata_key` — node names contain
+        spaces and parentheses in real Sentinel products (SPEC §6.6).
+        """
+        url = route(self._base, ROUTES[self._strategy]["nodes_root"], id=product.id)
+        for segment in (s for s in path.split("/") if s):
+            url = f"{url}({_quote_segment(segment)})/Nodes"
+        return url
+
+    def list(
+        self, product: Product, path: str = "", *, recursive: bool = False
+    ) -> builtins.list[Node]:
+        """Immediate children of ``path`` (root by default); BFS when recursive.
+
+        Recursion costs one request per directory here — Exos walks a prefix in
+        a single paginated request. The asymmetry is documented, not hidden.
+        """
+        nodes = self._list_level(product, path)
+        if not recursive:
+            return nodes
+        collected: dict[str, Node] = {n.path: n for n in nodes}
+        queue = [n.path for n in nodes if n.is_dir]
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            while queue:
+                # fetch one BFS depth level concurrently, bounded by the pool
+                results = list(pool.map(lambda p: self._list_level(product, p), queue))
+                queue = []
+                for children in results:
+                    for node in children:
+                        collected[node.path] = node
+                        if node.is_dir:
+                            queue.append(node.path)
+        return sorted(collected.values(), key=lambda n: n.path)
+
+    def _list_level(self, product: Product, path: str) -> builtins.list[Node]:
+        response = self._transport.request(
+            "GET",
+            self._nodes_url(product, path),
+            service="zipper",
+            auth=self._auth.httpx_auth(),
+        )
+        if response.status_code == 404:
+            raise ProductNotFound(product_id=product.id, backend=self.backend)
+        response.raise_for_status()
+        entries = response.json().get("result", response.json().get("value", []))
+        nodes = []
+        for entry in entries:
+            name = str(entry.get("Name", ""))
+            logical = f"{path}/{name}".lstrip("/") if path else name
+            children = entry.get("ChildrenNumber")
+            content_type = str(entry.get("ContentType", ""))
+            is_dir = (children or 0) > 0 or content_type in ("application/directory", "dir")
+            nodes.append(
+                Node(
+                    name=name,
+                    path=logical,
+                    size=entry.get("ContentLength") if not is_dir else None,
+                    is_dir=is_dir,
+                    raw=dict(entry),
+                )
+            )
+        return nodes

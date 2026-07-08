@@ -326,9 +326,19 @@ the discovered per-strategy `url`s are used directly.
 
 A strategy may declare a `capabilities` list (`["download", "list", "open"]`) to
 **gate** what the SDK will attempt through it (§6.6) — e.g. `resto`:
-`["download"]`. This is optional: when absent, the SDK uses its built-in
-knowledge of that strategy's capabilities. It lets a deployment disable a
-capability without an SDK change.
+`["download"]`. This field is an **intersection gate, never a source of truth**:
+the SDK's built-in capability matrix (§6.6) is authoritative for what a
+backend/strategy *can* do, and the discovery list can only **restrict** that set,
+never extend it. The effective capability set is
+`built_in(code) ∩ capabilities(discovery)` when the field is present, and
+`built_in(code)` when it is absent. Advertising a capability the SDK does not
+implement has no effect (the code must exist); the field's sole purpose is to let
+a deployment **disable** a capability it already supports, without an SDK change
+(e.g. temporarily turning off `open` on Exos during an incident). Whole-strategy
+disable is instead expressed via `deprecated`/`sunset`/availability (see below);
+`capabilities` exists only for the finer grain of switching off one operation on
+an otherwise-live endpoint (see §14 open question — confirm this granularity is
+actually required before relying on it).
 
 `api_version` is optional (see §6.3): services — or strategies — whose protocol
 versioning is owned externally, such as Exos over S3, omit it.
@@ -457,14 +467,40 @@ only what it supports:
   target, *, concurrency, resume, checksum, progress)` (facade: `client.download`
   / `eo download`); `products` accepts a single `Product` or an iterable of
   `Product`.
-- `Listable` *(optional)* — the `list` capability: `list(product, path="") ->
-  list[Node]` — traverses a product's **internal** file tree (the SAFE/archive
-  node structure), not the catalogue. Repository/product search stays the
-  catalogue's job (§6.5); this is the "what files are inside this product"
-  operation that enables selective and partial download.
+- `Listable` *(optional)* — the `list` capability: `list(product, path="", *,
+  recursive=False) -> list[Node]` — traverses a product's **internal** file tree
+  (the SAFE/archive node structure), not the catalogue. Repository/product search
+  stays the catalogue's job (§6.5); this is the "what files are inside this
+  product" operation that enables selective and partial download.
+  - **Single-level by default.** A call returns the *immediate children* of
+    `path` (root when `path=""`). This is the common denominator both backends
+    serve natively and cheaply: OData `Nodes(path)/Nodes` (one request per
+    directory) and S3 `ListObjectsV2(prefix=path, Delimiter="/")` (one paginated
+    request). The public contract is anchored here so that behaviour and cost are
+    uniform across backends.
+  - **Recursive is opt-in and *not* uniform cost.** `recursive=True` returns the
+    whole subtree, but the two backends realize it very differently: Exos does a
+    native prefix walk (~one paginated `ListObjectsV2` over the product prefix),
+    while Zipper must issue **one request per directory** (BFS/DFS over the
+    `Nodes` hierarchy). Each backend overrides recursion with its optimal
+    strategy rather than inheriting a generic per-level fan-out; the performance
+    asymmetry is documented, not hidden. `list()` never implicitly walks the full
+    tree — callers ask for it explicitly.
+  - **Directory semantics are normalized into `is_dir`.** S3 has no real
+    directories: `is_dir=True` is derived from `CommonPrefixes` (and zero-byte
+    "folder" keys); OData container nodes map directly. Corner cases (an empty
+    directory that exists in OData but has no S3 representation; a name that is
+    both a file and a prefix) are resolved in the backend and documented there.
+  - **Path/URL construction goes through `route()`** (§6.7). OData `Nodes(name)`
+    segments embed node names *inside the URL key syntax*; names containing
+    spaces, parentheses, or quotes must be OData-key-encoded, never assembled
+    with f-strings.
 - `RandomAccess` *(optional)* — the `open` capability: `open(product, path) ->
   file-like` — ranged reads of a single file inside a product, no full-product
-  transfer.
+  transfer. **Exos-only:** it depends on HTTP `Range` / ranged S3 GETs, which
+  **Zipper does not support** (neither strategy). Zipper serves whole objects
+  only — a full product (one or more files delivered as a zip) or a single
+  file — so `open` is never available via `via="zipper"`.
 
 Backend chosen via `via="zipper" | "exos"`. Capability names (`download`, `list`,
 `open`) are the vocabulary used in discovery `capabilities` (§6.2) and in
@@ -480,12 +516,27 @@ Requesting a capability a backend lacks raises `UnsupportedCapability` (§8); fo
 Zipper this interacts with capability-aware strategy selection (§6.3) — `resto`
 is a valid fallback for `download` but never for `list`/`open`.
 
+Zipper's `odata` strategy realizes these capabilities over the OData routes:
+full-product download via `Products({id})/$value` (not compressed product) or the equivalent
+`Products({id})/$zip` for compressed products, if available; single-file download via `Products({id})/Nodes({name})/$value`
+and standalone `Assets({id})/$value`; and listing via `Products({id})/Nodes`
+(one request per directory, §6.3). All of these return whole objects — there is
+no ranged/partial read (see `open` above).
+
 - **`Node`** model — `name`, `path`, `size`, `is_dir`, `checksum` (optional,
-  when the backend provides it). Returned by `list()`; `path` values feed
-  `open()` and selective `fetch()`.
+  when the backend provides it), `raw` (backend payload escape hatch, mirroring
+  `Product.raw`). `path` is a **logical, backend-agnostic** path within the
+  product (e.g. `GRANULE/L2A_.../IMG_DATA/R10m/..._B04.jp2`); each backend is
+  responsible for translating it to its own addressing — the OData
+  `Nodes(a)/Nodes(b)/…` chain for Zipper, the S3 key suffix under the product
+  prefix for Exos — exactly as `Product` already carries per-backend identifiers
+  (§5). Returned by `list()`; the same `path` value feeds `open()` and selective
+  `fetch()` identically regardless of `via=`.
 - Common transfer features implemented once in `base.py`, inherited by all
   backends (distinct from the `download`/`list`/`open` **capabilities** above):
-  - **Resume**: HTTP `Range` (Zipper) / ranged multipart GET (Exos).
+  - **Resume**: ranged multipart GET (**Exos only**). **Zipper does not support
+    HTTP `Range` requests**, so an interrupted Zipper transfer is restarted from
+    the beginning rather than resumed; the feature is a no-op on that backend.
   - **Retries**: exponential backoff with jitter (tenacity), idempotent-safe.
   - **Checksum verification** against catalogue metadata when available.
   - **Progress callback** (bytes done/total per product + aggregate); the CLI
@@ -716,6 +767,14 @@ Python ≥ 3.10 (pattern matching, `tomllib` in 3.11 — vendor fallback for 3.1
    (device flow enabled) vs reuse of an existing client id.
 7. **Telemetry** — anonymous usage metrics: out for v1, revisit later.
 8. **License & repository hosting** — internal vs open source.
+9. **Discovery `capabilities` granularity** — is sub-strategy capability disabling
+   (turning off one operation on an otherwise-live endpoint, §6.2) a real
+   operational need? Whole-strategy disable is already covered by
+   `deprecated`/`sunset`. If the finer grain is not required, drop the
+   `capabilities` field entirely (discovery carries only URLs + `api_version`) and
+   rely on the built-in matrix; if it is, consider modelling it as opt-*out*
+   (`disabled_capabilities`) so a deployment names only what it switches off and
+   cannot silently omit an intrinsic capability.
 
 ---
 

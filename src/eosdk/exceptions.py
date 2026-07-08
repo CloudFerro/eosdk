@@ -1,0 +1,150 @@
+"""Exception taxonomy for eosdk (SPEC §8).
+
+Every exception inherits :class:`EosdkError` and carries structured attributes;
+messages always name the failing service and, where possible, the config knob
+that fixes the problem.
+"""
+
+from __future__ import annotations
+
+
+class EosdkError(Exception):
+    """Base class for all eosdk errors."""
+
+
+class ConfigError(EosdkError):
+    """Configuration problem: bad TOML, unknown profile, missing/pending endpoint."""
+
+    def __init__(self, message: str, *, hint: str | None = None) -> None:
+        self.hint = hint
+        super().__init__(message if hint is None else f"{message} ({hint})")
+
+
+class AuthError(EosdkError):
+    """Login/refresh failure, or HTTP 401 persisting after a forced refresh."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        realm: str | None = None,
+        profile: str | None = None,
+    ) -> None:
+        self.realm = realm
+        self.profile = profile
+        parts = [message]
+        if realm is not None:
+            parts.append(f"realm={realm!r}")
+        if profile is not None:
+            parts.append(f"profile={profile!r}")
+        super().__init__(" | ".join(parts))
+
+
+class EndpointUnreachable(EosdkError):
+    """Connect/timeout failure on first use of a service or during doctor checks."""
+
+    def __init__(
+        self,
+        *,
+        service: str,
+        url: str,
+        hint: str | None = None,
+    ) -> None:
+        self.service = service
+        self.url = url
+        self.hint = hint
+        message = f"{service} is unreachable at {url}"
+        if hint is not None:
+            message = f"{message} ({hint})"
+        super().__init__(message)
+
+
+class UnsupportedApiVersion(EosdkError):
+    """A service advertises an API version outside the range this SDK supports."""
+
+    def __init__(
+        self,
+        *,
+        service: str,
+        advertised: str,
+        supported: str,
+        remediation: str | None = None,
+    ) -> None:
+        self.service = service
+        self.advertised = advertised
+        self.supported = supported
+        message = (
+            f"{service} advertises API version {advertised}; this eosdk supports {supported}"
+        )
+        if remediation is not None:
+            message = f"{message} — {remediation}"
+        super().__init__(message)
+
+
+class UnsupportedQueryFeature(EosdkError):
+    """A Query construct is not expressible in the selected catalogue backend."""
+
+    def __init__(self, *, backend: str, feature: str) -> None:
+        self.backend = backend
+        self.feature = feature
+        super().__init__(f"the {backend!r} catalogue backend does not support: {feature}")
+
+
+class UnsupportedCapability(EosdkError):
+    """No available strategy of the chosen backend supports the requested capability."""
+
+    def __init__(
+        self,
+        *,
+        backend: str,
+        capability: str,
+        alternative: str | None = None,
+    ) -> None:
+        self.backend = backend
+        self.capability = capability
+        self.alternative = alternative
+        message = f"backend {backend!r} does not support the {capability!r} capability"
+        if alternative is not None:
+            message = f"{message}; {alternative}"
+        super().__init__(message)
+
+
+class ProductNotFound(EosdkError):
+    """Catalogue get or download referenced a product the backend does not know."""
+
+    def __init__(self, *, product_id: str, backend: str) -> None:
+        self.product_id = product_id
+        self.backend = backend
+        super().__init__(f"product {product_id!r} not found ({backend})")
+
+
+class DownloadError(EosdkError):
+    """Transfer failed after retries were exhausted."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        product_id: str,
+        backend: str,
+        cause: BaseException | None = None,
+    ) -> None:
+        self.product_id = product_id
+        self.backend = backend
+        self.cause = cause
+        detail = f"{message} (product={product_id!r}, backend={backend})"
+        if cause is not None:
+            detail = f"{detail}: {cause!r}"
+        super().__init__(detail)
+
+
+class QuotaExceeded(EosdkError):
+    """The service answered 429 / quota exhausted."""
+
+    def __init__(self, *, service: str, retry_after: float | None = None) -> None:
+        self.service = service
+        self.retry_after = retry_after
+        message = f"{service} quota exceeded (HTTP 429)"
+        if retry_after is not None:
+            message = f"{message}, retry after {retry_after:g}s"
+        super().__init__(message)

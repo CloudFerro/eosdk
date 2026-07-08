@@ -131,6 +131,8 @@ class SearchResult:
 
     def __len__(self) -> int:
         if self._matched is None:
+            self._page_at(0)  # the count usually arrives with the first page
+        if self._matched is None:
             raise TypeError("this backend did not provide a result count")
         return self._matched
 

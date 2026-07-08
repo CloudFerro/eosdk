@@ -162,9 +162,7 @@ class StacCatalogue:
                     page_doc = self._post(capabilities.search_url, body)
             else:
                 href, method, merged_body = token
-                page_doc = (
-                    self._get(href) if method == "GET" else self._post(href, merged_body)
-                )
+                page_doc = self._get(href) if method == "GET" else self._post(href, merged_body)
             matched = page_doc.get("numberMatched") or page_doc.get("context", {}).get("matched")
             if matched is not None:
                 result._matched = int(matched)  # backend count feeds len() lazily

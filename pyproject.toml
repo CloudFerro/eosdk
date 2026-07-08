@@ -75,7 +75,11 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --strict-markers"
-markers = ["integration: end-to-end tests over respx fixtures"]
+markers = [
+    "integration: end-to-end tests over respx fixtures",
+    "smoke: live tests against a real platform (EOSDK_SMOKE=1)",
+    "slow: transfers real data; opt in explicitly",
+]
 
 [tool.coverage.run]
 source = ["eosdk"]

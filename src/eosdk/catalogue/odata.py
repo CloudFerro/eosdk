@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 from eosdk.catalogue._odata_filter import build_query_params
 from eosdk.exceptions import ProductNotFound
 from eosdk.models import Checksum, Collection, Page, Product, SearchResult
-from eosdk.transport import odata_key, route
+from eosdk.transport import route
 
 if TYPE_CHECKING:
     from eosdk.auth.base import CredentialsProvider
@@ -90,7 +90,8 @@ class ODataCatalogue:
         return result
 
     def get(self, product_id: str) -> Product:
-        url = route(self._base, ROUTES[self.api_version]["product_by_id"], id=odata_key(product_id))
+        # CDSE addresses products by bare (unquoted) UUID: Products(<uuid>)
+        url = route(self._base, ROUTES[self.api_version]["product_by_id"], id=product_id)
         response = self._transport.request(
             "GET",
             url,

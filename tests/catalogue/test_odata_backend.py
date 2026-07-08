@@ -107,7 +107,7 @@ class TestGet:
     def test_hit_normalizes(self, catalogue: ODataCatalogue) -> None:
         uuid = "f9d8a1c2-3b4e-5f60-7a8b-9c0d1e2f3a4b"
         name = "S2B_MSIL2A_20260615T095029_N0511_R079_T34UEE_20260615T105512.SAFE"
-        respx.get(f"{BASE}/odata/v1/Products('{uuid}')").mock(
+        respx.get(f"{BASE}/odata/v1/Products({uuid})").mock(
             return_value=httpx.Response(200, json=odata_entry(uuid, name))
         )
         product = catalogue.get(uuid)

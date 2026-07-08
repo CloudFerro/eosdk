@@ -84,7 +84,7 @@ class TestPrecedenceMatrix:
 
     def test_unpinned_field_falls_to_default(self, tmp_path: Path, missing: Path) -> None:
         cfg = load(env={}, cwd=tmp_path, user_config=missing)
-        assert cfg.endpoints.keycloak_realm == "eodata"
+        assert cfg.endpoints.keycloak_realm == "CDSE"
         assert cfg.sources["keycloak_realm"].source == "default"
 
 

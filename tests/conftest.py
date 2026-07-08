@@ -14,6 +14,24 @@ import respx
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
+# captured before the autouse fixture blanks it; asserted in test_defaults.py
+from eosdk.config import defaults as _defaults  # noqa: E402
+
+REAL_DEFAULTS = _defaults.BUILTIN_DEFAULTS
+
+
+@pytest.fixture(autouse=True)
+def _blank_builtin_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unit tests must never resolve to (or probe) the real CDSE endpoints.
+
+    The real defaults are asserted explicitly in tests/config/test_defaults.py.
+    """
+    from eosdk.config import defaults
+    from eosdk.config.settings import Endpoints
+
+    monkeypatch.setattr(defaults, "BUILTIN_DEFAULTS", Endpoints())
+
+
 KEYCLOAK = "https://auth.example.eu"
 CATALOGUE = "https://catalogue.example.eu/stac"
 ZIPPER = "https://zipper.example.eu"
@@ -24,8 +42,11 @@ PAYLOAD = b"zipped product bytes " * 128
 def stac_item(uuid: str, name: str) -> dict[str, Any]:
     item = json.loads((FIXTURES / "stac_item_s2.json").read_text())
     item["id"] = name
-    item["properties"]["eodata:uuid"] = uuid
-    item["assets"]["PRODUCT"]["file:checksum"] = "d510" + hashlib.md5(PAYLOAD).hexdigest()
+    product = item["assets"]["Product"]
+    # the UUID lives in the Product asset's zipper href (real CDSE shape)
+    product["href"] = f"{ZIPPER}/odata/v1/Products({uuid})/$value"
+    # varint multihash: md5 = code d5 (varint d5 01) + length 10 + digest
+    product["file:checksum"] = "d50110" + hashlib.md5(PAYLOAD).hexdigest()
     return item
 
 
@@ -40,6 +61,7 @@ def write_profile_config(path: Path) -> Path:
         f'catalogue_stac = "{CATALOGUE}"\n'
         f'zipper = "{ZIPPER}"\n'
         f'keycloak = "{KEYCLOAK}"\n'
+        'keycloak_realm = "eodata"\n'
         f'keys_manager = "{KEYS_MANAGER}"\n'
         f'exos_endpoint = "{EXOS_ENDPOINT}"\n'
         'exos_region = "us-east-1"\n'

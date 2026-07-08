@@ -45,9 +45,9 @@ def create(
             if endpoint:
                 print(f"AWS_ENDPOINT_URL={endpoint}")
             return
+        expires = credentials.expiration_date or "-"
         stdout.print(
-            f"created key [bold]{credentials.key_id}[/bold]"
-            f" (access key {_mask(credentials.access_key)}, secret {_mask('x' * 8)})"
+            f"created key [bold]{_mask(credentials.access_key)}[/bold] (expires {expires})"
         )
         stdout.print("use [bold]--export[/bold] to print credentials for aws/rclone")
 
@@ -66,9 +66,9 @@ def list_(
                 json.dumps(
                     [
                         {
-                            "key_id": e.key_id,
-                            "label": e.label,
-                            "created_at": e.created_at,
+                            "access_id": e.access_key,
+                            "organization": e.organization,
+                            "expiration_date": e.expiration_date,
                         }
                         for e in entries
                     ],
@@ -77,13 +77,12 @@ def list_(
             )
             return
         table = Table(title="S3 keys")
-        table.add_column("key id")
         table.add_column("access key")
-        table.add_column("label")
-        table.add_column("created")
+        table.add_column("organization")
+        table.add_column("expires")
         for entry in entries:
             table.add_row(
-                entry.key_id, _mask(entry.access_key), entry.label or "-", entry.created_at or "-"
+                _mask(entry.access_key), entry.organization or "-", entry.expiration_date or "-"
             )
         stdout.print(table)
 
@@ -91,13 +90,13 @@ def list_(
 @keys_app.command()
 def revoke(
     ctx: typer.Context,
-    key_id: Annotated[str, typer.Argument()],
+    access_id: Annotated[str, typer.Argument(help="The key's access id.")],
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation.")] = False,
 ) -> None:
     """Revoke a key pair."""
     state = get_state(ctx)
     with friendly_errors(state), build_client(state) as client:
         if not yes:
-            typer.confirm(f"Revoke S3 key {key_id!r}?", abort=True)
-        client.keys.revoke(key_id)
-        stdout.print(f"revoked [bold]{key_id}[/bold]")
+            typer.confirm(f"Revoke S3 key {access_id!r}?", abort=True)
+        client.keys.revoke(access_id)
+        stdout.print(f"revoked [bold]{access_id}[/bold]")

@@ -1,16 +1,26 @@
-"""S3 Keys Manager client (SPEC §6.4).
+"""S3 Keys Manager client (SPEC §6.4), aligned to the CloudFerro API.
+
+Real API (https://s3-keys-manager.cloudferro.com/api/user/docs, v1.8.x):
+
+- ``GET  /credentials?offset&limit`` -> ``{credentials: [{access_id, user_name,
+  organization, expiration_date}], count, offset, limit}`` — **no secrets**.
+- ``POST /credentials`` (optional ``{expiration_date}``) ->
+  ``{access_id, secret, expiration_date}`` — the only time the secret is shown.
+- ``DELETE /credentials/access_id/{access_id}``
+- ``PATCH  /credentials/access_id/{access_id}/secret_key`` — rotate the secret.
+
+The service has **no label concept**, so the SPEC's labeled-reuse policy is
+implemented client-side: labels map to ``access_id`` + secret in a per-profile
+on-disk store (mode 0600). The configured base URL already contains the API
+root (e.g. ``.../api/user``); routes carry no version segment.
 
 Authenticated with the Keycloak JWT; produces S3 credentials for the Exos
-backend, which never sees Keycloak tokens. Pins ``/v1`` via ``route()`` —
-never in the configured base URL (SPEC §6.3).
-
-The Keys Manager is assumed NOT to return secret keys on list, so
-``get_or_create`` caches the secret from ``create`` on disk
-(``~/.config/eosdk/s3keys/<profile>.json``, mode 0600, keyed by label).
+backend, which never sees Keycloak tokens.
 """
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
 import tempfile
@@ -31,18 +41,34 @@ if TYPE_CHECKING:
 
 
 class S3Credentials(BaseModel):
-    key_id: str
-    access_key: str
-    secret_key: SecretStr | None = None  # None on listings: the service returns no secrets
-    label: str | None = None
-    created_at: str | None = None
+    access_key: str  # the API's `access_id`; doubles as AWS_ACCESS_KEY_ID
+    secret_key: SecretStr | None = None  # None on listings: never returned there
+    expiration_date: str | None = None
+    label: str | None = None  # client-side only; the service has no labels
+    organization: str | None = None
+
+    @property
+    def key_id(self) -> str:  # canonical identifier for revoke/display
+        return self.access_key
 
     def require_secret(self) -> str:
         if self.secret_key is None:
             raise AuthError(
-                f"no secret available for S3 key {self.key_id!r}; create a new labeled key"
+                f"no secret available for S3 key {self.access_key!r}; "
+                "the keys manager only reveals secrets at creation time — create a new key"
             )
         return self.secret_key.get_secret_value()
+
+    def expired(self, *, now: dt.datetime | None = None) -> bool:
+        if not self.expiration_date:
+            return False
+        try:
+            expires = dt.datetime.fromisoformat(self.expiration_date.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=dt.timezone.utc)
+        return expires <= (now or dt.datetime.now(dt.timezone.utc))
 
 
 def default_s3keys_dir() -> Path:
@@ -80,20 +106,22 @@ class _SecretStore:
     def get(self, label: str) -> dict[str, str] | None:
         return self.load().get(label)
 
-    def put(self, label: str, key_id: str, access_key: str, secret: str) -> None:
+    def put(self, label: str, access_id: str, secret: str) -> None:
         entries = self.load()
-        entries[label] = {"key_id": key_id, "access_key": access_key, "secret_key": secret}
+        entries[label] = {"access_id": access_id, "secret_key": secret}
         self.save(entries)
 
-    def drop_key(self, key_id: str) -> None:
+    def drop_key(self, access_id: str) -> None:
         entries = {
-            label: entry for label, entry in self.load().items() if entry["key_id"] != key_id
+            label: entry
+            for label, entry in self.load().items()
+            if entry.get("access_id") != access_id
         }
         self.save(entries)
 
 
 class S3KeysProvider:
-    """Create/list/revoke S3 key pairs; labeled-reuse policy by default."""
+    """Create/list/revoke S3 key pairs; labeled-reuse policy is client-side."""
 
     def __init__(
         self,
@@ -112,7 +140,7 @@ class S3KeysProvider:
     def _request(self, method: str, template: str, /, **kwargs: Any) -> Any:
         response = self._transport.request(
             method,
-            route(self._base, template, **kwargs.pop("params", {})),
+            route(self._base, template, **kwargs.pop("route_params", {})),
             service="keys_manager",
             auth=self._auth.httpx_auth(),
             **kwargs,
@@ -124,51 +152,65 @@ class S3KeysProvider:
             )
         return response.json() if response.content else None
 
-    def create(self, label: str | None = None) -> S3Credentials:
-        payload = self._request("POST", "v1/keys", json={"label": label} if label else {})
+    def create(
+        self, label: str | None = None, *, expiration_date: str | None = None
+    ) -> S3Credentials:
+        body = {"expiration_date": expiration_date} if expiration_date else {}
+        payload = self._request("POST", "credentials", json=body)
         credentials = S3Credentials(
-            key_id=str(payload["key_id"]),
-            access_key=str(payload["access_key"]),
-            secret_key=SecretStr(str(payload["secret_key"])),
-            label=payload.get("label", label),
-            created_at=payload.get("created_at"),
+            access_key=str(payload["access_id"]),
+            secret_key=SecretStr(str(payload["secret"])),
+            expiration_date=payload.get("expiration_date"),
+            label=label,
         )
         if label is not None:
-            self._store.put(
-                label, credentials.key_id, credentials.access_key, credentials.require_secret()
-            )
+            self._store.put(label, credentials.access_key, credentials.require_secret())
         return credentials
 
     def list(self) -> list[S3Credentials]:
-        payload = self._request("GET", "v1/keys")
-        return [
-            S3Credentials(
-                key_id=str(entry["key_id"]),
-                access_key=str(entry.get("access_key", "")),
-                secret_key=None,
-                label=entry.get("label"),
-                created_at=entry.get("created_at"),
+        """All key pairs (paginated server-side; secrets are never included)."""
+        entries: list[S3Credentials] = []
+        offset = 0
+        while True:
+            payload = self._request("GET", "credentials", params={"offset": offset})
+            page = payload.get("credentials", [])
+            entries.extend(
+                S3Credentials(
+                    access_key=str(entry["access_id"]),
+                    secret_key=None,
+                    expiration_date=entry.get("expiration_date"),
+                    organization=entry.get("organization"),
+                )
+                for entry in page
             )
-            for entry in payload.get("keys", payload if isinstance(payload, list) else [])
-        ]
+            count = int(payload.get("count", len(entries)))
+            offset += len(page)
+            if offset >= count or not page:
+                break
+        return entries
 
-    def revoke(self, key_id: str) -> None:
-        self._request("DELETE", "v1/keys/{key_id}", params={"key_id": key_id})
-        self._store.drop_key(key_id)
+    def revoke(self, access_id: str) -> None:
+        self._request(
+            "DELETE",
+            "credentials/access_id/{access_id}",
+            route_params={"access_id": access_id},
+        )
+        self._store.drop_key(access_id)
 
     def get_or_create(self, label: str) -> S3Credentials:
-        """Labeled-reuse policy (SPEC §6.4 default): one key pair per label."""
+        """Labeled-reuse policy (SPEC §6.4 default), implemented client-side."""
         cached = self._store.get(label)
         if cached is not None:
-            active = {c.key_id for c in self.list()}
-            if cached["key_id"] in active:
+            active = {c.access_key: c for c in self.list()}
+            entry = active.get(cached["access_id"])
+            if entry is not None and not entry.expired():
                 return S3Credentials(
-                    key_id=cached["key_id"],
-                    access_key=cached.get("access_key", cached["key_id"]),
+                    access_key=cached["access_id"],
                     secret_key=SecretStr(cached["secret_key"]),
+                    expiration_date=entry.expiration_date,
                     label=label,
                 )
-            self._store.drop_key(cached["key_id"])  # revoked out-of-band: recreate
+            self._store.drop_key(cached["access_id"])  # revoked or expired: recreate
         return self.create(label=label)
 
     @contextmanager
@@ -178,4 +220,4 @@ class S3KeysProvider:
         try:
             yield credentials
         finally:
-            self.revoke(credentials.key_id)
+            self.revoke(credentials.access_key)

@@ -20,12 +20,20 @@ from urllib.parse import quote
 from eosdk.eodata.base import BaseDownloader
 from eosdk.exceptions import ProductNotFound, QuotaExceeded
 from eosdk.models import Node
-from eosdk.transport import RetryPolicy, odata_key, route
+from eosdk.transport import RetryPolicy, route
 
 
 def _quote_segment(segment: str) -> str:
-    """OData-key-quote a node name, then percent-encode for URL safety."""
-    return quote(odata_key(segment), safe="'()")
+    """Encode a node name for a ``Nodes({name})`` URL segment.
+
+    CDSE's zipper addresses nodes with *unquoted* names inside the parentheses
+    (verified against the ``alternate.https`` hrefs the live STAC API emits:
+    ``.../Products(<uuid>)/Nodes(S2A_...SAFE)/Nodes(GRANULE)/...``), so names
+    are percent-encoded rather than OData-key-quoted; parentheses and other
+    reserved characters inside names are escaped. Never assemble these with
+    raw f-strings (SPEC §6.6).
+    """
+    return quote(segment, safe="")
 
 
 if TYPE_CHECKING:

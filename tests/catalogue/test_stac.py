@@ -135,7 +135,7 @@ class TestTranslation:
         assert body == {
             "collections": ["SENTINEL-2"],
             "bbox": [22.5, 52.9, 24.0, 53.5],
-            "datetime": "2026-06-01/2026-06-30",
+            "datetime": "2026-06-01T00:00:00Z/2026-06-30T23:59:59Z",
             "limit": 50,
             "sortby": [{"field": "datetime", "direction": "desc"}],
             "query": {
@@ -242,10 +242,19 @@ class TestGetAndNormalization:
 
 
 class TestMultihash:
-    def test_md5(self) -> None:
-        checksum = decode_multihash("d5109e107d9d372bb6826bd81d3542a419d6")
+    def test_md5_varint(self) -> None:
+        # real CDSE shape: varint code d5 01, length 10, 16-byte digest
+        checksum = decode_multihash("d501109e107d9d372bb6826bd81d3542a419d6")
         assert checksum is not None
         assert checksum.algorithm == "md5"
+        assert checksum.value == "9e107d9d372bb6826bd81d3542a419d6"
+
+    def test_sha3_256(self) -> None:
+        digest = "f88fa1d881d56bd4c17737bc3ff0d416c48b72959f97e98d6bfd61aaab87bdd4"
+        checksum = decode_multihash("1620" + digest)
+        assert checksum is not None
+        assert checksum.algorithm == "sha3-256"
+        assert checksum.value == digest
 
     def test_sha256(self) -> None:
         digest = "a" * 64

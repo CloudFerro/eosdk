@@ -43,8 +43,8 @@ class Endpoints(BaseModel):
     exos_region: str = "default"
     keys_manager: str | None = None
     keycloak: str | None = None
-    keycloak_realm: str = "eodata"
-    keycloak_client_id: str = "eosdk"
+    keycloak_realm: str = "CDSE"
+    keycloak_client_id: str = "cdse-public"
     discovery_url: str | None = None
 
 

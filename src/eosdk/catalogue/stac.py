@@ -8,6 +8,7 @@ including the POST body-merge style.
 
 from __future__ import annotations
 
+import os.path
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -23,24 +24,39 @@ if TYPE_CHECKING:
 ITEM_SEARCH_CONFORMANCE = re.compile(r"https://api\.stacspec\.org/v1\.[\w.-]+/item-search")
 QUERY_EXT_CONFORMANCE = re.compile(r"https://api\.stacspec\.org/v1\.[\w.-]+/item-search#query")
 
-# Multihash prefix (code, length byte) -> checksum algorithm (plan risk R7).
-_MULTIHASH_ALGORITHMS = {0xD5: "md5", 0x11: "sha1", 0x12: "sha256"}
+# Multihash codes -> checksum algorithm. CDSE uses md5 (0xd5, varint-encoded
+# as d5 01) for product zips and sha3-256 (0x16) for individual assets.
+_MULTIHASH_ALGORITHMS = {0xD5: "md5", 0x11: "sha1", 0x12: "sha256", 0x16: "sha3-256"}
+
+
+def _read_uvarint(data: bytes, offset: int = 0) -> tuple[int, int]:
+    """Decode an unsigned varint; returns (value, bytes consumed)."""
+    value = shift = 0
+    for consumed, byte in enumerate(data[offset:], start=1):
+        value |= (byte & 0x7F) << shift
+        if not byte & 0x80:
+            return value, consumed
+        shift += 7
+        if shift > 28:
+            break
+    raise ValueError("invalid varint")
 
 
 def decode_multihash(value: str) -> Checksum | None:
     """Decode a hex multihash (STAC ``file:checksum``) into a :class:`Checksum`.
 
-    Unknown hash codes degrade to ``None`` rather than failing the search.
+    Real CDSE values use varint-encoded codes (e.g. ``d5 01 10 <16 bytes>`` for
+    md5). Unknown hash codes degrade to ``None`` rather than failing a search.
     """
     try:
         data = bytes.fromhex(value)
+        code, consumed = _read_uvarint(data)
+        length, length_bytes = _read_uvarint(data, consumed)
     except ValueError:
         return None
-    if len(data) < 2:
-        return None
-    algorithm = _MULTIHASH_ALGORITHMS.get(data[0])
-    digest = data[2:]
-    if algorithm is None or len(digest) != data[1]:
+    digest = data[consumed + length_bytes :]
+    algorithm = _MULTIHASH_ALGORITHMS.get(code)
+    if algorithm is None or len(digest) != length or not digest:
         return None
     return Checksum(algorithm=algorithm, value=digest.hex())  # type: ignore[arg-type]
 
@@ -103,10 +119,9 @@ class StacCatalogue:
             for link in landing.get("links", []):
                 if link.get("rel") == "search":
                     search_url = link["href"]
-                    method = str(link.get("method", "POST")).upper()
-                    if method == "POST":
-                        break  # prefer POST when both advertised
-                    search_method = method
+                    search_method = str(link.get("method", "POST")).upper()
+                    if search_method == "POST":
+                        break  # prefer POST when both advertised (CDSE lists GET first)
             if search_url is None:
                 search_url = route(self._base, "search")
             self._capabilities = _StacCapabilities(
@@ -125,7 +140,7 @@ class StacCatalogue:
         if query.bbox is not None:
             body["bbox"] = list(query.bbox)
         if query.datetime is not None:
-            body["datetime"] = query.datetime
+            body["datetime"] = _normalize_interval(query.datetime)
         if query.limit is not None:
             body["limit"] = query.limit
         if query.sort is not None:
@@ -153,6 +168,7 @@ class StacCatalogue:
     def search(self, query: Query) -> SearchResult:
         body = self._build_body(query)  # translate (and fail) before any search request
         capabilities = self.capabilities()
+        remaining = query.limit
 
         def fetch_page(token: Any | None) -> Page:
             if token is None:
@@ -167,6 +183,12 @@ class StacCatalogue:
             if matched is not None:
                 result._matched = int(matched)  # backend count feeds len() lazily
             products = [_item_to_product(item) for item in page_doc.get("features", [])]
+            nonlocal remaining
+            if remaining is not None:
+                products = products[:remaining]
+                remaining -= len(products)
+                if remaining <= 0:
+                    return Page(products, next_token=None)
             return Page(products, next_token=_next_token(page_doc, body))
 
         result = SearchResult(fetch_page)
@@ -208,6 +230,23 @@ class _StacCapabilities:
         self.query_extension = query_extension
 
 
+def _normalize_interval(value: str) -> str:
+    """Expand bare dates to RFC 3339 instants (CDSE rejects date-only bounds)."""
+
+    def bound(ts: str, *, end: bool) -> str:
+        ts = ts.strip()
+        if not ts or ts == "..":
+            return ".."
+        if "T" not in ts:
+            return f"{ts}T23:59:59Z" if end else f"{ts}T00:00:00Z"
+        return ts if ts.endswith("Z") or "+" in ts[10:] else f"{ts}Z"
+
+    if "/" in value:
+        start, _, end = value.partition("/")
+        return f"{bound(start, end=False)}/{bound(end, end=True)}"
+    return f"{bound(value, end=False)}/{bound(value, end=True)}"
+
+
 def _body_to_params(body: dict[str, Any]) -> dict[str, str]:
     params: dict[str, str] = {}
     for key, value in body.items():
@@ -241,13 +280,26 @@ def _next_token(page_doc: dict[str, Any], original_body: dict[str, Any]) -> Any 
     return None
 
 
+_PRODUCTS_UUID = re.compile(r"/Products\(([^)]+)\)")
+
+
 def _download_id(item: dict[str, Any]) -> str:
     """Extract the identifier the Zipper download route needs.
 
-    Deployment-sensitive (plan risk R2): STAC item ids are often product names
-    while Zipper's OData route expects a UUID. Fallback chain, most explicit
-    first; adjust here once verified against the real service.
+    On CDSE the product UUID lives in the ``Product`` asset's href
+    (``https://download.../odata/v1/Products(<uuid>)/$value``) — verified
+    against the live STAC API. Property-based fallbacks keep other
+    deployments working; the item id is the last resort.
     """
+    for asset in _candidate_assets(item):
+        match = _PRODUCTS_UUID.search(str(asset.get("href", "")))
+        if match:
+            return match.group(1)
+        alternate = asset.get("alternate") or {}
+        for alt in alternate.values():
+            match = _PRODUCTS_UUID.search(str(alt.get("href", "")))
+            if match:
+                return match.group(1)
     properties = item.get("properties", {})
     for key in ("eodata:uuid", "odata:id", "uuid", "id"):
         value = properties.get(key)
@@ -256,28 +308,53 @@ def _download_id(item: dict[str, Any]) -> str:
     return str(item["id"])
 
 
+def _candidate_assets(item: dict[str, Any]) -> list[dict[str, Any]]:
+    """Assets most likely to describe the whole product, most specific first."""
+    assets = item.get("assets", {})
+    ordered = [assets[name] for name in ("Product", "PRODUCT", "product") if name in assets]
+    ordered.extend(a for a in assets.values() if a not in ordered)
+    return ordered
+
+
+def _product_s3_path(item: dict[str, Any], primary: dict[str, Any]) -> str | None:
+    """Whole-product S3 root.
+
+    Derived from the common prefix of the item's ``s3://`` asset hrefs (on
+    CDSE every asset lives under ``s3://eodata/.../<product>.SAFE/``); a
+    path-like ``file:local_path`` is used when no s3 hrefs exist. Verified
+    against the live CDSE STAC API — its Product ``file:local_path`` is just
+    the zip filename, not a path.
+    """
+    s3_hrefs = [
+        str(asset.get("href", ""))
+        for asset in item.get("assets", {}).values()
+        if str(asset.get("href", "")).startswith("s3://")
+    ]
+    if s3_hrefs:
+        prefix = os.path.commonprefix(s3_hrefs)
+        if len(s3_hrefs) == 1:
+            prefix = prefix.rsplit("/", 1)[0]  # a single file: its directory
+        return prefix.rstrip("/") or None
+    local_path = str(primary.get("file:local_path") or "")
+    if local_path.startswith(("s3://", "/")):
+        return local_path
+    for asset in item.get("assets", {}).values():
+        alternate = (asset.get("alternate") or {}).get("s3", {}).get("href", "")
+        if alternate.startswith(("s3://", "/eodata")):
+            return str(alternate)
+    return None
+
+
 def _item_to_product(item: dict[str, Any]) -> Product:
     properties = item.get("properties", {})
-    assets = item.get("assets", {})
-    primary: dict[str, Any] = (
-        assets.get("PRODUCT") or assets.get("product") or next(iter(assets.values()), {})
-    )
+    primary: dict[str, Any] = next(iter(_candidate_assets(item)), {})
 
     checksum = None
     multihash = primary.get("file:checksum") or properties.get("file:checksum")
     if multihash:
         checksum = decode_multihash(multihash)
 
-    s3_path = None
-    for asset in assets.values():
-        href = asset.get("href", "")
-        if href.startswith("s3://"):
-            s3_path = href
-            break
-        alternate = asset.get("alternate", {}).get("s3", {}).get("href", "")
-        if alternate.startswith("s3://") or alternate.startswith("/eodata"):
-            s3_path = alternate
-            break
+    s3_path = _product_s3_path(item, primary)
 
     return Product(
         id=_download_id(item),

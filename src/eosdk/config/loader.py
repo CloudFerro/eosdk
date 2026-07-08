@@ -22,8 +22,8 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from pydantic import ValidationError
 
+from eosdk.config import defaults as _defaults
 from eosdk.config.defaults import (
-    BUILTIN_DEFAULTS,
     ENV_PLATFORM,
     ENV_PROFILE,
     ENV_TLS_VERIFY,
@@ -205,7 +205,7 @@ def load(
             else:
                 resolved = ResolvedValue(None, "discovery")
         if resolved is None:
-            default = getattr(BUILTIN_DEFAULTS, fieldname)
+            default = getattr(_defaults.BUILTIN_DEFAULTS, fieldname)
             resolved = ResolvedValue(default, "default" if default is not None else "unset")
         sources[fieldname] = resolved
         if resolved.value is not None:

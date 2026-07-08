@@ -58,7 +58,7 @@ def install_nodes_routes(router: respx.Router) -> dict[str, respx.Route]:
     for directory in TREE:
         url = f"{BASE}/odata/v1/Products(uuid-safe)/Nodes"
         for segment in (s for s in directory.split("/") if s):
-            url += f"('{segment}')/Nodes"
+            url += f"({segment})/Nodes"
         routes[directory] = router.get(url__eq=url).mock(
             return_value=httpx.Response(200, json=nodes_payload(directory))
         )
@@ -87,7 +87,7 @@ class TestSingleLevel:
         nodes = downloader.list(PRODUCT, path=directory)
         assert sorted(n.name for n in nodes) == ["T34UEE_B04_10m.jp2", "T34UEE_B08_10m.jp2"]
         request_url = unquote(str(routes[directory].calls.last.request.url))
-        assert "Nodes('GRANULE')/Nodes(" in request_url  # every segment key-quoted
+        assert "Nodes(GRANULE)/Nodes(" in request_url  # CDSE-style unquoted names
 
 
 class TestAdversarialNames:
@@ -103,8 +103,8 @@ class TestAdversarialNames:
                 json={"result": [{"Name": weird_dir, "ChildrenNumber": 1, "ContentLength": 0}]},
             )
         )
-        # ' -> '' (OData), space -> %20, parens kept, quotes around the literal
-        child_url = f"{root_url}('S2B_MSIL2A%20(1).SAFE')/Nodes"
+        # space -> %20, parens percent-encoded, no OData quoting (CDSE style)
+        child_url = f"{root_url}(S2B_MSIL2A%20%281%29.SAFE)/Nodes"
         child = respx.get(url__eq=child_url).mock(
             return_value=httpx.Response(
                 200,
@@ -116,9 +116,9 @@ class TestAdversarialNames:
         assert nodes[0].name == weird_file
         assert nodes[0].path == f"{weird_dir}/{weird_file}"
 
-    def test_quote_doubling_in_url(self, downloader: ZipperDownloader) -> None:
-        url = downloader._nodes_url(PRODUCT, "o'brien")
-        assert "('o''brien')" in unquote(url)
+    def test_reserved_characters_encoded(self, downloader: ZipperDownloader) -> None:
+        url = downloader._nodes_url(PRODUCT, "o'brien (1)")
+        assert "Nodes(o%27brien%20%281%29)" in url  # nothing raw sneaks into the URL
 
 
 class TestRecursive:

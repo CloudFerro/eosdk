@@ -38,15 +38,30 @@ def client(tmp_path: Path) -> Iterator[Client]:
 @pytest.fixture
 def platform(platform_mocks: respx.Router) -> Iterator[respx.Router]:
     """Extend the shared HTTP mocks: SAFE item, keys manager, zipper Nodes."""
-    # keys manager
-    platform_mocks.post(f"{KEYS_MANAGER}/v1/keys").mock(
+    # keys manager (CloudFerro /credentials API)
+    platform_mocks.post(f"{KEYS_MANAGER}/credentials").mock(
         return_value=httpx.Response(
             200,
-            json={"key_id": "kid-1", "access_key": "AK", "secret_key": "SK", "label": "eosdk"},
+            json={"access_id": "AK", "secret": "SK", "expiration_date": "2027-01-01T00:00:00Z"},
         )
     )
-    platform_mocks.get(f"{KEYS_MANAGER}/v1/keys").mock(
-        return_value=httpx.Response(200, json={"keys": [{"key_id": "kid-1"}]})
+    platform_mocks.get(url__startswith=f"{KEYS_MANAGER}/credentials").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "credentials": [
+                    {
+                        "access_id": "AK",
+                        "user_name": "alice",
+                        "organization": "org",
+                        "expiration_date": "2027-01-01T00:00:00Z",
+                    }
+                ],
+                "count": 1,
+                "offset": 0,
+                "limit": 100,
+            },
+        )
     )
 
     # zipper Nodes for the SAFE product root + IMG_DATA chain
@@ -58,17 +73,17 @@ def platform(platform_mocks: respx.Router) -> Iterator[respx.Router]:
         return_value=nodes([{"Name": "GRANULE", "ChildrenNumber": 1}])
     )
     granule = "L2A_T34UEE_A012345_20260615T095030"
-    platform_mocks.get(url__eq=f"{base}('GRANULE')/Nodes").mock(
+    platform_mocks.get(url__eq=f"{base}(GRANULE)/Nodes").mock(
         return_value=nodes([{"Name": granule, "ChildrenNumber": 1}])
     )
-    platform_mocks.get(url__eq=f"{base}('GRANULE')/Nodes('{granule}')/Nodes").mock(
+    platform_mocks.get(url__eq=f"{base}(GRANULE)/Nodes({granule})/Nodes").mock(
         return_value=nodes([{"Name": "IMG_DATA", "ChildrenNumber": 1}])
     )
+    platform_mocks.get(url__eq=f"{base}(GRANULE)/Nodes({granule})/Nodes(IMG_DATA)/Nodes").mock(
+        return_value=nodes([{"Name": "R10m", "ChildrenNumber": 1}])
+    )
     platform_mocks.get(
-        url__eq=f"{base}('GRANULE')/Nodes('{granule}')/Nodes('IMG_DATA')/Nodes"
-    ).mock(return_value=nodes([{"Name": "R10m", "ChildrenNumber": 1}]))
-    platform_mocks.get(
-        url__eq=f"{base}('GRANULE')/Nodes('{granule}')/Nodes('IMG_DATA')/Nodes('R10m')/Nodes"
+        url__eq=f"{base}(GRANULE)/Nodes({granule})/Nodes(IMG_DATA)/Nodes(R10m)/Nodes"
     ).mock(
         return_value=nodes(
             [
@@ -83,15 +98,11 @@ def platform(platform_mocks: respx.Router) -> Iterator[respx.Router]:
         "id": safe_tree.PRODUCT_NAME,
         "collection": "SENTINEL-2",
         "geometry": None,
-        "properties": {
-            "datetime": "2026-06-15T09:50:29Z",
-            "eo:cloud_cover": 12.4,
-            "eodata:uuid": "uuid-safe",
-        },
+        "properties": {"datetime": "2026-06-15T09:50:29Z", "eo:cloud_cover": 12.4},
         "assets": {
-            "PRODUCT": {
+            "Product": {
                 "href": f"{ZIPPER}/odata/v1/Products(uuid-safe)/$value",
-                "alternate": {"s3": {"href": safe_tree.S3_PATH}},
+                "file:local_path": safe_tree.S3_PATH,
             }
         },
         "links": [],

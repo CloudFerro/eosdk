@@ -111,7 +111,12 @@ class AuthStatus:
 
 
 class _BearerAuth(httpx.Auth):
-    """Attach the JWT; on 401 force one refresh and retry once (SPEC §6.4)."""
+    """Attach the JWT; on 401 force one refresh and retry once (SPEC §6.4).
+
+    Without a session the request goes out anonymously — public services
+    (e.g. the CDSE STAC catalogue) work without login; a 401 then raises the
+    login hint instead of failing before the request is even attempted.
+    """
 
     requires_response_body = False
 
@@ -119,9 +124,19 @@ class _BearerAuth(httpx.Auth):
         self._provider = provider
 
     def auth_flow(self, request: httpx.Request) -> Generator[httpx.Request, httpx.Response, None]:
-        request.headers["Authorization"] = f"Bearer {self._provider.access_token()}"
+        anonymous = False
+        try:
+            request.headers["Authorization"] = f"Bearer {self._provider.access_token()}"
+        except AuthError:
+            anonymous = True
         response = yield request
         if response.status_code == 401:
+            if anonymous:
+                raise AuthError(
+                    f"this service requires a session; {LOGIN_HINT}",
+                    realm=self._provider.realm,
+                    profile=self._provider.profile,
+                )
             request.headers["Authorization"] = f"Bearer {self._provider.force_refresh()}"
             response = yield request
             if response.status_code == 401:

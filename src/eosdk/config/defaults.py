@@ -1,8 +1,8 @@
 """Built-in defaults and the env-var mapping (single source of truth).
 
-``BUILTIN_DEFAULTS`` holds endpoints for the primary known deployment.
-TODO(deployment): fill with the real platform endpoints before the first
-staging run (SPEC §6.1 step 6; plan risk R9 — needs product input).
+``BUILTIN_DEFAULTS`` holds the primary known deployment: the Copernicus Data
+Space Ecosystem (CDSE) with the CloudFerro S3 Keys Manager — verified against
+the live services and their published API docs (2026-07).
 """
 
 from __future__ import annotations
@@ -28,9 +28,15 @@ ENV_PROFILE = "EOSDK_PROFILE"
 ENV_PLATFORM = "EOSDK_PLATFORM"
 ENV_TLS_VERIFY = "EOSDK_TLS_VERIFY"
 
+# The default known deployment: CDSE (SPEC §6.1 precedence step 6).
 BUILTIN_DEFAULTS = Endpoints(
-    # TODO(deployment): real endpoints for the default known deployment.
+    catalogue_stac="https://stac.dataspace.copernicus.eu/v1",
+    catalogue_odata="https://catalogue.dataspace.copernicus.eu",
+    zipper="https://download.dataspace.copernicus.eu",
+    exos_endpoint="https://eodata.dataspace.copernicus.eu",
     exos_region="default",
-    keycloak_realm="eodata",
-    keycloak_client_id="eosdk",
+    keys_manager="https://s3-keys-manager.cloudferro.com/api/user",
+    keycloak="https://identity.dataspace.copernicus.eu/auth",
+    keycloak_realm="CDSE",
+    keycloak_client_id="cdse-public",
 )

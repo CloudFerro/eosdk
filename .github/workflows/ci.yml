@@ -44,3 +44,4 @@ jobs:
           uv venv /tmp/smoke --python 3.12
           uv pip install --python /tmp/smoke/bin/python dist/*.whl
           /tmp/smoke/bin/python -c "import eosdk; print(eosdk.__version__)"
+          /tmp/smoke/bin/eo --help

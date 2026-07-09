@@ -11,6 +11,7 @@
 ::: eosdk.models.SearchResult
 ::: eosdk.models.Node
 ::: eosdk.models.Collection
+::: eosdk.models.Queryable
 
 ## Auth
 

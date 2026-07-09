@@ -6,7 +6,9 @@ What this shows
 * searching with collection / bbox / time interval / attribute filters
 * ``SearchResult`` is lazy and re-iterable: pages are fetched on demand and
   cached, so iterating twice performs no extra requests
-* listing available collections
+* discovering the vocabulary: available collections (with product types via
+  ``Collection.raw`` summaries) and filterable attributes via
+  ``client.queryables()``
 * switching the catalogue protocol between STAC (default) and OData
 
 Prerequisites: none — anonymous catalogue search works against the built-in
@@ -55,17 +57,36 @@ def main() -> None:
         for page_number, page in enumerate(results.pages(), start=1):
             print(f"page {page_number}: {len(page)} products")
 
-        # -- collections --------------------------------------------------------
+        # -- discovering the vocabulary: collections and queryables ---------------
         print("\ncollections:")
         for coll in client.collections()[:10]:
             print(f"  {coll.id}: {coll.title or '-'}")
+            # `raw` keeps the full backend document — e.g. STAC summaries list
+            # the product types a collection contains:
+            types = coll.raw.get("summaries", {}).get("product:type")
+            if types:
+                print(f"    product types: {types}")
+
+        # Which attributes can be filtered on, per backend vocabulary?
+        # (STAC names like "eo:cloud_cover"; the aliases cloudCover/productType
+        # from the filter table keep working too.)
+        print("\nqueryables for sentinel-2-l2a (stac):")
+        for q in client.queryables("sentinel-2-l2a"):
+            print(f"  {q.name}: {q.type or '?'}")
+
+        print("\nqueryables for SENTINEL-2 (odata):")
+        for q in client.queryables("SENTINEL-2", protocol="odata"):
+            print(f"  {q.name}: {q.type or '?'}")
 
         # -- same query over the OData backend ----------------------------------
-        # `filters` are backend-neutral: the SDK translates them per protocol.
+        # `filters` are backend-neutral, but collection ids are NOT translated:
+        # each backend has its own vocabulary. STAC uses product-level ids
+        # ("sentinel-2-l2a"); OData uses mission-level names ("SENTINEL-2",
+        # the whole mission — narrow by productType to match a STAC collection).
         odata_results = client.search(
-            collection="SENTINEL-2",                # OData collections use platform naming
+            collection="SENTINEL-2",
             datetime="2026-06-01/2026-06-05",
-            filters={"cloudCover": "<20"},
+            filters={"cloudCover": "<20", "productType": "S2MSI2A"},  # L2A only
             limit=5,
             protocol="odata",
         )

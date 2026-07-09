@@ -12,8 +12,8 @@ import datetime as dt
 from typing import TYPE_CHECKING, Any
 
 from eosdk.catalogue._odata_filter import build_query_params
-from eosdk.exceptions import ProductNotFound
-from eosdk.models import Checksum, Collection, Page, Product, SearchResult
+from eosdk.exceptions import ProductNotFound, UnsupportedQueryFeature
+from eosdk.models import Checksum, Collection, Page, Product, Queryable, SearchResult
 from eosdk.transport import route
 
 if TYPE_CHECKING:
@@ -26,10 +26,20 @@ ROUTES = {
         "products": "odata/v1/Products",
         "product_by_id": "odata/v1/Products({id})",
         "collections": "odata/v1/Collections",
+        "attributes": "odata/v1/Attributes({collection})",
     }
 }
 
 _CHECKSUM_ALGORITHMS = {"md5": "md5", "sha1": "sha1", "sha256": "sha256", "sha3-256": "sha3-256"}
+
+# CSC attribute ValueType -> the normalized Queryable.type vocabulary.
+_ATTRIBUTE_TYPES = {
+    "String": "string",
+    "Double": "number",
+    "Integer": "integer",
+    "Boolean": "boolean",
+    "DateTimeOffset": "datetime",
+}
 
 
 class ODataCatalogue:
@@ -111,8 +121,34 @@ class ODataCatalogue:
                 id=entry.get("Name", entry.get("Id", "")),
                 title=entry.get("DisplayName") or entry.get("Name"),
                 description=entry.get("Description"),
+                raw=entry,
             )
             for entry in document.get("value", [])
+        ]
+
+    def queryables(self, collection: str) -> list[Queryable]:
+        """Filterable attributes from the CSC ``Attributes(<collection>)`` endpoint."""
+        # CSC addresses attribute sets by bare (unquoted) collection name.
+        url = route(self._base, ROUTES[self.api_version]["attributes"], collection=collection)
+        response = self._transport.request(
+            "GET",
+            url,
+            service="catalogue_odata",
+            auth=self._auth.httpx_auth() if self._auth else None,
+        )
+        if response.status_code == 404:
+            raise UnsupportedQueryFeature(
+                backend=self.backend, feature=f"queryables for collection {collection!r}"
+            )
+        response.raise_for_status()
+        return [
+            Queryable(
+                name=entry["Name"],
+                type=_ATTRIBUTE_TYPES.get(entry.get("ValueType", "")),
+                raw=entry,
+            )
+            for entry in response.json()
+            if isinstance(entry, dict) and "Name" in entry
         ]
 
     def query_raw(self, odata_query: str) -> dict[str, Any]:

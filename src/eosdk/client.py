@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from eosdk.eodata.capabilities import Capability
     from eosdk.eodata.exos import ExosDownloader
     from eosdk.eodata.zipper import ZipperDownloader
-    from eosdk.models import Collection, Node, Product, SearchResult
+    from eosdk.models import Collection, Node, Product, Queryable, SearchResult
 
 
 class Client:
@@ -250,6 +250,15 @@ class Client:
 
     def collections(self, *, protocol: str = "stac") -> list[Collection]:
         return self._catalogue(protocol).collections()
+
+    def queryables(self, collection: str, *, protocol: str = "stac") -> list[Queryable]:
+        """Filterable attributes a collection advertises (SPEC §6.5).
+
+        Names are backend-native and usable directly as ``filters`` keys for
+        that protocol. Raises ``UnsupportedQueryFeature`` when the backend
+        (or the given collection) does not advertise queryables.
+        """
+        return self._catalogue(protocol).queryables(collection)
 
     def download(
         self,

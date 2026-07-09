@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Any
 
 from eosdk import Client
 from eosdk.eodata.capabilities import Capability, Strategy
-from eosdk.models import Collection, Page, Product, SearchResult
+from eosdk.models import Collection, Page, Product, Queryable, SearchResult
 from eosdk.plugins import PluginSpec
 
 if TYPE_CHECKING:
@@ -120,6 +120,9 @@ class StaticCatalogue:
 
     def collections(self) -> list[Collection]:
         return [Collection(id="demo", title="Demo collection")]
+
+    def queryables(self, collection: str) -> list[Queryable]:
+        return [Queryable(name="cloudCover", type="number")]
 
 
 # -- 3. the specs a plugin package exports via its entry points ----------------------

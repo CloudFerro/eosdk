@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from eosdk.catalogue.query import PROPERTY_ALIASES, parse_filters
 from eosdk.exceptions import ProductNotFound, UnsupportedApiVersion, UnsupportedQueryFeature
-from eosdk.models import Checksum, Collection, Page, Product, Query, SearchResult
+from eosdk.models import Checksum, Collection, Page, Product, Query, Queryable, SearchResult
 from eosdk.transport import route
 
 if TYPE_CHECKING:
@@ -207,20 +207,65 @@ class StacCatalogue:
         return _item_to_product(features[0])
 
     def collections(self) -> list[Collection]:
-        document = self._get(route(self._base, "collections"))
+        # /collections may paginate via rel="next" links (CDSE serves 10/page);
+        # follow them all, guarding against a server echoing the same href.
         out: list[Collection] = []
-        for entry in document.get("collections", []):
-            extent = entry.get("extent", {})
-            out.append(
-                Collection(
-                    id=entry["id"],
-                    title=entry.get("title"),
-                    description=entry.get("description"),
-                    extent_spatial=extent.get("spatial", {}).get("bbox"),
-                    extent_temporal=extent.get("temporal", {}).get("interval"),
+        url: str | None = route(self._base, "collections")
+        visited: set[str] = set()
+        while url is not None and url not in visited:
+            visited.add(url)
+            document = self._get(url)
+            for entry in document.get("collections", []):
+                extent = entry.get("extent", {})
+                out.append(
+                    Collection(
+                        id=entry["id"],
+                        title=entry.get("title"),
+                        description=entry.get("description"),
+                        extent_spatial=extent.get("spatial", {}).get("bbox"),
+                        extent_temporal=extent.get("temporal", {}).get("interval"),
+                        raw=entry,
+                    )
                 )
+            url = next(
+                (
+                    link.get("href")
+                    for link in document.get("links", [])
+                    if link.get("rel") == "next"
+                ),
+                None,
             )
         return out
+
+    def queryables(self, collection: str) -> list[Queryable]:
+        """Filterable attributes from the OGC ``/queryables`` endpoint (a JSON Schema)."""
+        url = route(self._base, "collections/{id}/queryables", id=collection)
+        response = self._transport.request(
+            "GET",
+            url,
+            service="catalogue_stac",
+            auth=self._auth.httpx_auth() if self._auth else None,
+        )
+        if response.status_code == 404:  # optional STAC extension; not every server has it
+            raise UnsupportedQueryFeature(
+                backend=self.backend, feature=f"queryables for collection {collection!r}"
+            )
+        response.raise_for_status()
+        document = response.json()
+        return [
+            Queryable(name=name, type=_queryable_type(schema), raw=schema)
+            for name, schema in document.get("properties", {}).items()
+        ]
+
+
+def _queryable_type(schema: Any) -> str | None:
+    """Normalize a queryable's JSON-Schema fragment to a simple type name."""
+    if not isinstance(schema, dict):
+        return None
+    if schema.get("format") == "date-time":
+        return "datetime"
+    declared = schema.get("type")
+    return declared if isinstance(declared, str) else None
 
 
 class _StacCapabilities:

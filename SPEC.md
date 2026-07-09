@@ -463,7 +463,10 @@ declare which `CredentialsProvider` they need; the client wires it up.
 ### 6.5 Catalogue (`eosdk.catalogue`)
 
 - `Catalogue` protocol: `search(query) -> SearchResult`, `get(id) -> Product`,
-  `collections() -> list[Collection]`.
+  `collections() -> list[Collection]`,
+  `queryables(collection) -> list[Queryable]` (filterable attributes: STAC
+  `/queryables`, CSC OData `Attributes(<collection>)`; names are backend-native
+  and raise `UnsupportedQueryFeature` where the backend has no such endpoint).
 - `protocol="stac" | "odata"` selectable per call; default from config.
 - Both backends translate the shared `Query` object (see §5) and normalize
   results to `Product`.

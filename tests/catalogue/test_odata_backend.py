@@ -7,7 +7,7 @@ import respx
 
 from eosdk.catalogue.odata import ODataCatalogue
 from eosdk.catalogue.stac import _item_to_product
-from eosdk.exceptions import ProductNotFound
+from eosdk.exceptions import ProductNotFound, UnsupportedQueryFeature
 from eosdk.models import Query
 from eosdk.transport import RetryPolicy, Transport
 from tests.conftest import stac_item
@@ -159,3 +159,45 @@ class TestParity:
         assert from_stac.size == from_odata.size
         assert from_stac.cloud_cover == from_odata.cloud_cover
         assert from_stac.datetime == from_odata.datetime
+
+
+class TestCollectionsAndQueryables:
+    @respx.mock
+    def test_collections_keep_raw_payload(self, catalogue: ODataCatalogue) -> None:
+        respx.get(f"{BASE}/odata/v1/Collections").mock(
+            return_value=httpx.Response(
+                200,
+                json={"value": [{"Name": "SENTINEL-2", "Description": "MSI", "Extra": 1}]},
+            )
+        )
+        (collection,) = catalogue.collections()
+        assert collection.id == "SENTINEL-2"
+        assert collection.raw["Extra"] == 1
+
+    @respx.mock
+    def test_queryables_normalized_from_attributes(self, catalogue: ODataCatalogue) -> None:
+        respx.get(f"{BASE}/odata/v1/Attributes(SENTINEL-2)").mock(
+            return_value=httpx.Response(
+                200,
+                json=[
+                    {"Name": "productType", "ValueType": "String"},
+                    {"Name": "cloudCover", "ValueType": "Double"},
+                    {"Name": "orbitNumber", "ValueType": "Integer"},
+                    {"Name": "beginningDateTime", "ValueType": "DateTimeOffset"},
+                    {"Name": "exotic", "ValueType": "Blob"},
+                ],
+            )
+        )
+        queryables = {q.name: q for q in catalogue.queryables("SENTINEL-2")}
+        assert queryables["productType"].type == "string"
+        assert queryables["cloudCover"].type == "number"
+        assert queryables["orbitNumber"].type == "integer"
+        assert queryables["beginningDateTime"].type == "datetime"
+        assert queryables["exotic"].type is None  # unknown ValueType degrades, raw kept
+        assert queryables["exotic"].raw == {"Name": "exotic", "ValueType": "Blob"}
+
+    @respx.mock
+    def test_unknown_collection_is_unsupported(self, catalogue: ODataCatalogue) -> None:
+        respx.get(f"{BASE}/odata/v1/Attributes(NOPE)").mock(return_value=httpx.Response(404))
+        with pytest.raises(UnsupportedQueryFeature, match="NOPE"):
+            catalogue.queryables("NOPE")

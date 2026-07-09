@@ -266,3 +266,78 @@ class TestMultihash:
     @pytest.mark.parametrize("bad", ["zz", "ff10" + "a" * 32, "d510abcd", ""])
     def test_unknown_or_malformed_degrade_to_none(self, bad: str) -> None:
         assert decode_multihash(bad) is None
+
+
+class TestCollectionsAndQueryables:
+    @respx.mock
+    def test_collections_keep_raw_payload(self, catalogue: StacCatalogue) -> None:
+        entry = {
+            "id": "sentinel-2-l2a",
+            "title": "Sentinel-2 Level-2A",
+            "extent": {"spatial": {"bbox": [[-180, -90, 180, 90]]}},
+            "summaries": {"product:type": ["S2MSI2A"]},
+        }
+        respx.get(f"{BASE}/collections").mock(
+            return_value=httpx.Response(200, json={"collections": [entry]})
+        )
+        (collection,) = catalogue.collections()
+        assert collection.id == "sentinel-2-l2a"
+        assert collection.raw["summaries"]["product:type"] == ["S2MSI2A"]
+
+    @respx.mock
+    def test_collections_follow_next_links(self, catalogue: StacCatalogue) -> None:
+        page_two = f"{BASE}/collections?offset=1"
+        # One route serves both pages in sequence; the second page echoes an
+        # already-visited next href, which must not loop.
+        mock = respx.get(url__startswith=f"{BASE}/collections").mock(
+            side_effect=[
+                httpx.Response(
+                    200,
+                    json={
+                        "collections": [{"id": "one"}],
+                        "links": [{"rel": "next", "href": page_two}],
+                    },
+                ),
+                httpx.Response(
+                    200,
+                    json={
+                        "collections": [{"id": "two"}],
+                        "links": [{"rel": "next", "href": page_two}],
+                    },
+                ),
+            ]
+        )
+        assert [c.id for c in catalogue.collections()] == ["one", "two"]
+        assert mock.call_count == 2
+
+    @respx.mock
+    def test_queryables_normalized_from_json_schema(self, catalogue: StacCatalogue) -> None:
+        respx.get(f"{BASE}/collections/sentinel-2-l2a/queryables").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                        "eo:cloud_cover": {"type": "number", "minimum": 0, "maximum": 100},
+                        "product:type": {"type": "string"},
+                        "datetime": {"type": "string", "format": "date-time"},
+                        "geometry": {"$ref": "https://geojson.org/schema/Geometry.json"},
+                    },
+                },
+            )
+        )
+        queryables = {q.name: q for q in catalogue.queryables("sentinel-2-l2a")}
+        assert queryables["eo:cloud_cover"].type == "number"
+        assert queryables["product:type"].type == "string"
+        assert queryables["datetime"].type == "datetime"  # format wins over "string"
+        assert queryables["geometry"].type is None  # $ref only: nothing declared
+        assert queryables["eo:cloud_cover"].raw["maximum"] == 100
+
+    @respx.mock
+    def test_missing_queryables_endpoint_is_unsupported(self, catalogue: StacCatalogue) -> None:
+        respx.get(f"{BASE}/collections/nope/queryables").mock(
+            return_value=httpx.Response(404, json={"code": "NotFound"})
+        )
+        with pytest.raises(UnsupportedQueryFeature, match="queryables"):
+            catalogue.queryables("nope")

@@ -102,6 +102,21 @@ class Collection(BaseModel):
     description: str | None = None
     extent_spatial: list[list[float]] | None = None
     extent_temporal: list[list[dt.datetime | None]] | None = None
+    raw: dict[str, Any] = Field(default_factory=dict, repr=False)
+
+
+class Queryable(BaseModel):
+    """A filterable attribute advertised by a catalogue backend (SPEC §6.5).
+
+    ``name`` is backend-native (e.g. ``eo:cloud_cover`` on STAC, ``cloudCover``
+    on OData) and is accepted as-is in ``Query.filters`` for that backend.
+    ``type`` is normalized to ``string | number | integer | boolean | datetime``
+    when the backend declares one; ``raw`` keeps the untouched declaration.
+    """
+
+    name: str
+    type: str | None = None
+    raw: dict[str, Any] = Field(default_factory=dict, repr=False)
 
 
 @dataclass

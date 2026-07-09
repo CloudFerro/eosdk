@@ -357,6 +357,17 @@ major version; a document whose major version it does not recognize is rejected
 with a clear error rather than partially parsed. Unknown service or strategy keys
 are ignored, so the format stays forward-compatible.
 
+Because unknown keys are ignored, evolution within a major is additive and a
+major bump should be essentially never needed. If one ever is, it is handled by
+the **filename, not the URL scheme**: `eo-services.json` is frozen at major 1
+for its lifetime — a new major is published *alongside* it under a new
+well-known name (`/.well-known/eo-services.v2.json`), and SDKs that implement
+it probe newest-first and fall back. Deployed SDKs therefore never encounter a
+major they cannot parse at the URL they derive, no coordinated client upgrade
+is required, and the document remains static JSON servable from a bucket/CDN
+(which content negotiation via `Accept` headers would break). The cost of
+versioning is paid only if a second major ever exists.
+
 **Per-service standard discovery** (used with or without the platform document):
 
 - Keycloak: everything resolved from

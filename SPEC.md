@@ -115,7 +115,8 @@ eosdk/
 ├── exceptions.py          # EosdkError (base); AuthError, ProductNotFound,
 │                          #   DownloadError, EndpointUnreachable,
 │                          #   UnsupportedApiVersion, UnsupportedQueryFeature,
-│                          #   UnsupportedCapability, QuotaExceeded
+│                          #   UnsupportedCapability, QuotaExceeded,
+│                          #   S3KeyLimitReached
 ├── config/
 │   ├── settings.py        # Endpoints + Profile models (pydantic)
 │   ├── loader.py          # resolution chain: kwargs > env (EOSDK_*) >
@@ -459,6 +460,17 @@ declare which `CredentialsProvider` they need; the client wires it up.
 - `eo keys create --export` emits `AWS_ACCESS_KEY_ID=... / AWS_SECRET_ACCESS_KEY=...`
   lines for interop with plain `aws s3`, rclone, etc. Secrets are never printed
   otherwise (masked in logs and `status` output).
+- **Key limit.** The Keys Manager caps the number of concurrent key pairs per
+  account; at the cap, `POST /credentials` answers HTTP 403 with
+  "Max number of credentials reached." The SDK treats hitting the cap as a
+  first-class condition, not a generic HTTP failure: `create()` maps the
+  refusal to `S3KeyLimitReached` (§8), whose message includes the remediation
+  (revoke an
+  unused key, or use labeled reuse). Both key policies are designed to stay
+  under the cap — `get_or_create(label=...)` never creates a second pair for a
+  label that still has a live key, and ephemeral keys revoke on context exit.
+  An ephemeral key leaked by a hard kill still counts against the cap until
+  cleaned up with `eo keys revoke`.
 
 ### 6.5 Catalogue (`eosdk.catalogue`)
 
@@ -708,6 +720,7 @@ Exception taxonomy (all inherit `EosdkError`):
 | `ProductNotFound` | catalogue get/download miss | product id, backend |
 | `DownloadError` | transfer failure after retries | product, backend, last cause |
 | `QuotaExceeded` | service-side 429/quota | service, retry-after if provided |
+| `S3KeyLimitReached` | Keys Manager refuses key creation: account's cap on concurrent key pairs is reached (distinct from 429 — only revoking clears it) | service, server detail, remediation (revoke via `eo keys revoke`, or labeled reuse) |
 
 Principles: fail early (version guard, query translation) rather than
 mid-transfer; every error names the failing service and, where possible, the

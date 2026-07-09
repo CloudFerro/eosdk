@@ -16,6 +16,11 @@ root (e.g. ``.../api/user``); routes carry no version segment.
 
 Authenticated with the Keycloak JWT; produces S3 credentials for the Exos
 backend, which never sees Keycloak tokens.
+
+The service caps the number of concurrent key pairs per account. ``create()``
+maps the cap refusal to :class:`~eosdk.exceptions.S3KeyLimitReached`; labeled
+reuse (``get_or_create``) and revoke-on-exit ephemeral keys exist precisely to
+stay under that cap.
 """
 
 from __future__ import annotations
@@ -30,7 +35,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, SecretStr
 
-from eosdk.exceptions import AuthError
+from eosdk.exceptions import AuthError, S3KeyLimitReached
 from eosdk.transport import route
 
 if TYPE_CHECKING:
@@ -69,6 +74,26 @@ class S3Credentials(BaseModel):
         if expires.tzinfo is None:
             expires = expires.replace(tzinfo=dt.timezone.utc)
         return expires <= (now or dt.datetime.now(dt.timezone.utc))
+
+
+# The service caps concurrent key pairs per account; POST /credentials at the
+# cap answers HTTP 403 with "Max number of credentials reached." (observed on
+# v1.8). The wording is not a documented contract, so also accept nearby
+# phrasings — but only on the create route, where the cap is the only
+# limit-shaped refusal possible.
+_KEY_LIMIT_MARKERS = (
+    "max number of credentials",  # the actual v1.8 message
+    "maximum number of credentials",
+    "credentials limit",
+    "too many credentials",
+)
+
+
+def _is_key_limit(response: Any, detail: str) -> bool:
+    if response.status_code not in (400, 403, 409):
+        return False
+    lowered = detail.lower()
+    return any(marker in lowered for marker in _KEY_LIMIT_MARKERS)
 
 
 def default_s3keys_dir() -> Path:
@@ -146,15 +171,23 @@ class S3KeysProvider:
             **kwargs,
         )
         if response.status_code >= 400:
+            detail = response.text[:200]
+            if method == "POST" and template == "credentials" and _is_key_limit(response, detail):
+                raise S3KeyLimitReached(detail=detail)
             raise AuthError(
-                f"keys manager request failed with HTTP {response.status_code}: "
-                f"{response.text[:200]}"
+                f"keys manager request failed with HTTP {response.status_code}: {detail}"
             )
         return response.json() if response.content else None
 
     def create(
         self, label: str | None = None, *, expiration_date: str | None = None
     ) -> S3Credentials:
+        """Create a fresh key pair.
+
+        Raises :class:`~eosdk.exceptions.S3KeyLimitReached` when the account's
+        cap on concurrent keys is hit; prefer :meth:`get_or_create`, which only
+        creates when the label has no live key.
+        """
         body = {"expiration_date": expiration_date} if expiration_date else {}
         payload = self._request("POST", "credentials", json=body)
         credentials = S3Credentials(
@@ -215,7 +248,12 @@ class S3KeysProvider:
 
     @contextmanager
     def ephemeral(self, label_prefix: str = "eosdk-ephemeral") -> Iterator[S3Credentials]:
-        """Explicit alternative policy: a fresh key revoked on context exit."""
+        """Explicit alternative policy: a fresh key revoked on context exit.
+
+        Counts against the account's key cap while the context is open, so
+        entry can raise :class:`~eosdk.exceptions.S3KeyLimitReached`; a key
+        leaked by a hard kill must be cleaned up with ``eo keys revoke``.
+        """
         credentials = self.create(label=None)
         try:
             yield credentials

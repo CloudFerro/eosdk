@@ -11,7 +11,7 @@ import pytest
 import respx
 
 from eosdk.auth.s3_keys import S3KeysProvider
-from eosdk.exceptions import AuthError
+from eosdk.exceptions import AuthError, S3KeyLimitReached
 from eosdk.transport import RetryPolicy, Transport
 
 BASE = "https://s3-keys-manager.example.eu/api/user"
@@ -115,6 +115,84 @@ class TestCreateListRevoke:
         respx.post(CREDENTIALS_URL).mock(return_value=httpx.Response(403, text="forbidden"))
         with pytest.raises(AuthError, match="403"):
             provider.create()
+
+
+class TestKeyLimit:
+    """The service caps concurrent key pairs; create() maps the refusal."""
+
+    @respx.mock
+    @pytest.mark.parametrize(
+        ("status", "detail"),
+        [
+            (403, {"detail": "Max number of credentials reached."}),  # actual v1.8 response
+            (403, {"detail": "Maximum number of credentials exceeded"}),
+            (400, {"detail": "credentials limit reached"}),
+            (409, {"detail": "too many credentials for user"}),
+        ],
+    )
+    def test_create_at_cap_raises_key_limit(
+        self, provider: S3KeysProvider, status: int, detail: dict[str, str]
+    ) -> None:
+        respx.post(CREDENTIALS_URL).mock(return_value=httpx.Response(status, json=detail))
+        with pytest.raises(S3KeyLimitReached, match="revoke") as excinfo:
+            provider.create()
+        assert detail["detail"] in str(excinfo.value)  # server wording preserved
+
+    @respx.mock
+    def test_key_limit_is_not_an_auth_error(self, provider: S3KeysProvider) -> None:
+        respx.post(CREDENTIALS_URL).mock(
+            return_value=httpx.Response(403, json={"detail": "Max number of credentials reached."})
+        )
+        with pytest.raises(S3KeyLimitReached):
+            provider.create()
+        with pytest.raises(S3KeyLimitReached):  # not swallowed by `except AuthError`
+            try:
+                provider.create()
+            except AuthError:
+                pytest.fail("key limit must not surface as a generic AuthError")
+
+    @respx.mock
+    def test_non_limit_4xx_still_auth_error(self, provider: S3KeysProvider) -> None:
+        respx.post(CREDENTIALS_URL).mock(return_value=httpx.Response(403, text="forbidden"))
+        with pytest.raises(AuthError, match="403"):
+            provider.create()
+
+    @respx.mock
+    def test_limit_wording_on_other_routes_stays_auth_error(
+        self, provider: S3KeysProvider
+    ) -> None:
+        # Only POST /credentials can hit the cap; a validation error elsewhere
+        # that happens to say "limit" must not be misread as the key cap.
+        respx.delete(f"{CREDENTIALS_URL}/access_id/AKIA001").mock(
+            return_value=httpx.Response(400, json={"detail": "limit malformed"})
+        )
+        with pytest.raises(AuthError, match="400"):
+            provider.revoke("AKIA001")
+
+    @respx.mock
+    def test_get_or_create_reuses_without_create_at_cap(self, provider: S3KeysProvider) -> None:
+        # Seed the label, then put the account "at the cap": reuse must succeed
+        # because get_or_create never POSTs while the labeled key is live.
+        respx.post(CREDENTIALS_URL).mock(
+            side_effect=[
+                httpx.Response(200, json=created()),
+                httpx.Response(403, json={"detail": "Max number of credentials reached."}),
+            ]
+        )
+        respx.get(url__startswith=CREDENTIALS_URL).mock(
+            return_value=httpx.Response(200, json=listing("AKIA001"))
+        )
+        provider.get_or_create("my-pipeline")
+        reused = provider.get_or_create("my-pipeline")
+        assert reused.access_key == "AKIA001"
+
+    @respx.mock
+    def test_ephemeral_at_cap_raises_before_yield(self, provider: S3KeysProvider) -> None:
+        respx.post(CREDENTIALS_URL).mock(
+            return_value=httpx.Response(403, json={"detail": "Max number of credentials reached."})
+        )
+        with pytest.raises(S3KeyLimitReached), provider.ephemeral():
+            pytest.fail("context body must not run when creation is refused")
 
 
 class TestLabeledReuse:

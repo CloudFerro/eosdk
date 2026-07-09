@@ -52,8 +52,17 @@ def main() -> None:
 
         # -- S3 keys ---------------------------------------------------------------
         # Labeled keys are idempotent: the same label returns the same pair,
-        # so pipelines can call this on every run without minting garbage.
-        creds = client.keys.get_or_create("my-pipeline")
+        # so pipelines can call this on every run without minting garbage —
+        # which also keeps you under the account's cap on concurrent keys.
+        # Hitting the cap raises S3KeyLimitReached (HTTP 403 from the service);
+        # revoke an unused key or stick to labeled reuse.
+        from eosdk.exceptions import S3KeyLimitReached
+
+        try:
+            creds = client.keys.get_or_create("my-pipeline")
+        except S3KeyLimitReached as exc:
+            print(f"key cap reached: {exc}")   # message names the remediation
+            raise
         print(f"access key: {creds.access_key} (expires {creds.expiration_date or 'never'})")
 
         for entry in client.keys.list():           # never returns secrets

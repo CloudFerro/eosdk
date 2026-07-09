@@ -9,6 +9,7 @@ from eosdk.exceptions import (
     EosdkError,
     ProductNotFound,
     QuotaExceeded,
+    S3KeyLimitReached,
     UnsupportedApiVersion,
     UnsupportedCapability,
     UnsupportedQueryFeature,
@@ -24,6 +25,7 @@ ALL_ERRORS = [
     ProductNotFound,
     DownloadError,
     QuotaExceeded,
+    S3KeyLimitReached,
 ]
 
 
@@ -102,6 +104,14 @@ def test_quota_exceeded_retry_after() -> None:
     err = QuotaExceeded(service="zipper", retry_after=30.0)
     assert "429" in str(err)
     assert "30" in str(err)
+
+
+def test_s3_key_limit_names_remediation() -> None:
+    err = S3KeyLimitReached(detail="Max number of credentials reached.")
+    msg = str(err)
+    assert "Max number of credentials reached." in msg
+    assert "eo keys revoke" in msg
+    assert "get_or_create" in msg
 
 
 def test_config_error_hint() -> None:

@@ -136,6 +136,32 @@ class DownloadError(EosdkError):
         super().__init__(detail)
 
 
+class S3KeyLimitReached(EosdkError):
+    """The S3 Keys Manager refused to create a key pair: the account's cap on
+    concurrent keys is reached. Distinct from :class:`QuotaExceeded` (429 rate
+    limiting): this is a resource cap that only revoking a key can clear."""
+
+    def __init__(
+        self,
+        *,
+        service: str = "keys manager",
+        detail: str | None = None,
+        limit: int | None = None,
+    ) -> None:
+        self.service = service
+        self.detail = detail
+        self.limit = limit
+        message = f"{service} refused to create an S3 key: the account's key limit is reached"
+        if limit is not None:
+            message = f"{message} (limit={limit})"
+        if detail:
+            message = f"{message}: {detail}"
+        super().__init__(
+            f"{message} — revoke an unused key (`eo keys list`, `eo keys revoke <access_id>`) "
+            "or reuse an existing labeled key (`get_or_create(label=...)`)"
+        )
+
+
 class QuotaExceeded(EosdkError):
     """The service answered 429 / quota exhausted."""
 

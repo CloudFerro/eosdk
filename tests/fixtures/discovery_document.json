@@ -21,6 +21,9 @@
     },
     "exos": { "endpoint": "https://s3.example.eu", "region": "default" },
     "keys_manager": { "url": "https://keys.example.eu/api", "api_version": "v1" },
-    "auth": { "issuer": "https://auth.example.eu/realms/eodata" }
+    "auth": {
+      "issuer": "https://auth.example.eu/realms/eodata",
+      "client_id": "example-public"
+    }
   }
 }

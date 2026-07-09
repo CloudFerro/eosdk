@@ -7,8 +7,10 @@
       and `project.license` in `pyproject.toml`
 - [ ] Configure a PyPI **Trusted Publisher** for this repository
       (`.github/workflows/release.yml`, environment `pypi`)
-- [ ] Confirm the dedicated Keycloak client for the SDK (SPEC §14.6);
-      built-in default is CDSE's public client `cdse-public`
+- [ ] Confirm the dedicated Keycloak client for the SDK (SPEC §14.6) and
+      publish it as `auth.client_id` in the platform discovery document
+      (SPEC §6.2); the SDK's built-in fallback is CDSE's public client
+      `cdse-public`
 - [ ] Run the authenticated smoke suite against the platform:
       `EOSDK_SMOKE=1 EOSDK_SMOKE_USERNAME=... EOSDK_SMOKE_PASSWORD=... uv run pytest tests/smoke -m smoke`
 - [ ] Run `benchmarks/bench_download.py`; record results in `benchmarks/RESULTS.md`

@@ -64,6 +64,15 @@ class TestSingleRootBootstrap:
         assert resolved["keycloak_realm"].value == "eodata"
 
     @respx.mock
+    def test_discovered_client_id_beats_builtin_default(self, client: Client) -> None:
+        mock_platform()
+        client._endpoint("keycloak", service="keycloak")
+        resolved = client.config.resolved()
+        assert resolved["keycloak_client_id"].value == "example-public"
+        assert resolved["keycloak_client_id"].source == "discovery"
+        assert client.config.endpoints.keycloak_client_id == "example-public"
+
+    @respx.mock
     def test_second_use_is_memoized(self, client: Client) -> None:
         route = mock_platform()
         client._endpoint("keycloak", service="keycloak")

@@ -96,6 +96,9 @@ def project_endpoints(document: DiscoveryDocument) -> dict[str, str]:
             )
         projected["keycloak"] = base
         projected["keycloak_realm"] = realm.strip("/")
+    if auth.get("client_id"):
+        # Public-client id only — this document must never carry a secret.
+        projected["keycloak_client_id"] = str(auth["client_id"])
 
     zipper = services.get("zipper", {})
     strategies = _service_strategies(zipper)

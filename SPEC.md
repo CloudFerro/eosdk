@@ -302,7 +302,8 @@ to the SDK. Resolution order for the discovery URL itself:
                                  "replacement": "odata" } },
     "exos":         { "endpoint": "https://s3.example.eu", "region": "default" },
     "keys_manager": { "url": "https://keys.example.eu/api", "api_version": "v1" },
-    "auth":         { "issuer": "https://auth.example.eu/realms/eodata" }
+    "auth":         { "issuer": "https://auth.example.eu/realms/eodata",
+                      "client_id": "example-public" }
   }
 }
 ```
@@ -316,6 +317,9 @@ its own `url` and, where the SDK owns the version, its own `api_version`.
 **Mapping to the `Endpoints` model.** The flat fields in §6.1 hold per-service
 *base* URLs; the nested discovery shape is projected onto them at parse time:
 `auth.issuer` → `keycloak` + `keycloak_realm` (split on `/realms/`),
+`auth.client_id` → `keycloak_client_id` (optional; the deployment's *public*
+OAuth client for the SDK/CLI — a confidential client id or secret must never
+appear in this document),
 `exos.endpoint` / `region` → `exos_endpoint` / `exos_region`, and
 `catalogue.stac` / `.odata` → the two catalogue fields. A service with several
 strategies collapses onto its single base field (`zipper`): the SDK stores one
@@ -775,7 +779,9 @@ Python ≥ 3.10 (pattern matching, `tomllib` in 3.11 — vendor fallback for 3.1
 5. **STAC client** — thin custom implementation vs `pystac-client` dependency
    (spike in Phase 1).
 6. **Keycloak client registration** — dedicated public client for the SDK
-   (device flow enabled) vs reuse of an existing client id.
+   (device flow enabled) vs reuse of an existing client id. Whatever the
+   decision, the deployment can advertise it via `auth.client_id` in the
+   discovery document (§6.2) instead of the SDK hardcoding it.
 7. **Telemetry** — anonymous usage metrics: out for v1, revisit later.
 8. **License & repository hosting** — internal vs open source.
 9. **Discovery `capabilities` granularity** — is sub-strategy capability disabling

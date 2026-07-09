@@ -69,7 +69,22 @@ class TestProjection:
         assert projected["keys_manager"] == "https://keys.example.eu/api"
         assert projected["keycloak"] == "https://auth.example.eu"
         assert projected["keycloak_realm"] == "eodata"
+        assert projected["keycloak_client_id"] == "example-public"
         assert projected["zipper"]  # multi-strategy service collapses to a base
+
+    def test_client_id_absent_not_projected(self) -> None:
+        raw = spec_document()
+        del raw["services"]["auth"]["client_id"]
+        projected = project_endpoints(parse_document(raw))
+        assert "keycloak_client_id" not in projected
+        assert projected["keycloak_realm"] == "eodata"  # issuer mapping unaffected
+
+    def test_client_id_without_issuer_projected(self) -> None:
+        raw = spec_document()
+        raw["services"]["auth"] = {"client_id": "standalone-public"}
+        projected = project_endpoints(parse_document(raw))
+        assert projected["keycloak_client_id"] == "standalone-public"
+        assert "keycloak" not in projected
 
     def test_issuer_without_realms_rejected(self) -> None:
         raw = spec_document()

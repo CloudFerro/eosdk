@@ -3,6 +3,12 @@
 ## Unreleased (Phase 4 — hardening)
 
 ### Added
+- Discovery document `auth.client_id` (optional): a deployment can advertise
+  its public OAuth client for the SDK/CLI; projected onto
+  `keycloak_client_id` with the usual precedence (kwargs/env/profile pins
+  beat discovery; the built-in `cdse-public` remains the last-resort default).
+  Previously a discovery-bootstrapped non-CDSE platform silently kept CDSE's
+  client id.
 - Documentation site (mkdocs-material + mkdocstrings): quickstart,
   configuration, CLI and API reference, error taxonomy; built `--strict` in CI.
 - Live smoke suite (`tests/smoke`, gated by `EOSDK_SMOKE=1`); the anonymous

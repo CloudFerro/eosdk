@@ -34,6 +34,14 @@ eo search --collection SENTINEL-1 --bbox 22.5,52.9,24.0,53.5 \
   | eo download - --via zipper -o ./data
 ```
 
+## Examples
+
+[examples/](examples/) contains runnable, commented examples for both surfaces:
+[examples/python/](examples/python/) covers search, downloads, ranged reads,
+auth and S3 keys, configuration, error handling, raw-query escape hatches, and
+plugin backends; [examples/cli/](examples/cli/) are annotated `eo` walkthroughs
+(search-pipe-download, auth, keys, profiles, discovery/doctor).
+
 ## Local discovery endpoint (Docker)
 
 [docker/discovery/](docker/discovery/) contains an nginx image that serves a sample

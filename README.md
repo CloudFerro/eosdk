@@ -34,6 +34,37 @@ eo search --collection SENTINEL-1 --bbox 22.5,52.9,24.0,53.5 \
   | eo download - --via zipper -o ./data
 ```
 
+## Local discovery endpoint (Docker)
+
+[docker/discovery/](docker/discovery/) contains an nginx image that serves a sample
+service-discovery document at the well-known path
+(`/.well-known/eo-services.json`) — useful for developing against discovery
+without a real platform.
+
+```bash
+docker build -t eosdk-discovery docker/discovery
+docker run --rm -p 8080:80 eosdk-discovery
+curl http://localhost:8080/.well-known/eo-services.json
+```
+
+Point the SDK at it via the platform root:
+
+```python
+from eosdk import Client
+
+client = Client(platform="http://localhost:8080")
+```
+
+To serve your own document instead of the baked-in sample
+([docker/discovery/eo-services.json](docker/discovery/eo-services.json)), mount it over
+the well-known path:
+
+```bash
+docker run --rm -p 8080:80 \
+  -v "$(pwd)/my-services.json:/usr/share/nginx/html/.well-known/eo-services.json:ro" \
+  eosdk-discovery
+```
+
 ## Development
 
 Requires [uv](https://docs.astral.sh/uv/).

@@ -1,0 +1,29 @@
+{
+  "version": "1.0",
+  "services": {
+    "catalogue": {
+      "stac": { "url": "https://catalogue.example.eu/stac" },
+      "odata": { "url": "https://catalogue.example.eu/odata", "api_version": "v1" }
+    },
+    "zipper": {
+      "odata": {
+        "url": "https://zipper.example.eu/odata",
+        "api_version": "v1",
+        "capabilities": ["download", "list"]
+      },
+      "resto": {
+        "url": "https://zipper.example.eu/download",
+        "capabilities": ["download"],
+        "deprecated": true,
+        "sunset": "2027-01-01",
+        "replacement": "odata"
+      }
+    },
+    "exos": { "endpoint": "https://s3.example.eu", "region": "default" },
+    "keys_manager": { "url": "https://keys.example.eu/api", "api_version": "v1" },
+    "auth": {
+      "issuer": "https://auth.example.eu/realms/eodata",
+      "client_id": "example-public"
+    }
+  }
+}

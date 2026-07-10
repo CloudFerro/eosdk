@@ -83,3 +83,19 @@ uv run pytest        # tests
 uv run ruff check .  # lint
 uv run mypy          # type check (strict)
 ```
+
+Run smoke tests:
+
+```bash
+EOSDK_SMOKE=1 uv run pytest tests/smoke/
+```
+
+Note that the authenticated ones will also need real credentials configured:
+
+```bash
+EOSDK_SMOKE=1 \
+EOSDK_SMOKE_USERNAME=you@example.com \
+EOSDK_SMOKE_PASSWORD=... \
+uv run pytest tests/smoke/
+```
+Attention: smoke tests create credentials in some tests; tear down step is included, but it should not be run frequently as S3 credentials are not meant to be temporary

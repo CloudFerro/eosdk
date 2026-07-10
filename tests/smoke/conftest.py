@@ -4,18 +4,33 @@ Skipped unless EOSDK_SMOKE=1. Anonymous tests need only that; authenticated
 tests additionally need EOSDK_SMOKE_USERNAME / EOSDK_SMOKE_PASSWORD (and
 optionally EOSDK_SMOKE_PLATFORM or EOSDK_* endpoint pins; the built-in CDSE
 defaults are used otherwise). Tests are small and idempotent; ephemeral keys
-are revoked on exit.
+are revoked on context exit, and labeled keys created during a test are
+revoked in fixture teardown (their cache lives in tmp_path, so without
+revocation they would leak server-side on every run).
 """
 
 from __future__ import annotations
 
+import json
 import os
+import warnings
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
 
 from eosdk import Client
+from eosdk.exceptions import EosdkError, S3KeyLimitReached
+
+
+@contextmanager
+def skip_on_key_quota() -> Iterator[None]:
+    """A full S3 key quota is an account precondition, not an SDK defect."""
+    try:
+        yield
+    except S3KeyLimitReached as exc:
+        pytest.skip(f"account precondition not met: {exc}")
 
 
 def _smoke_enabled() -> bool:
@@ -34,6 +49,30 @@ def _blank_builtin_defaults() -> None:
     return None
 
 
+def _revoke_cached_keys(client: Client, keys_dir: Path) -> None:
+    """Revoke labeled keys recorded in the test's throwaway cache.
+
+    The label->access_id mapping exists only client-side; once tmp_path is
+    gone the key can neither be reused nor recognized as ours, so it must be
+    revoked while the record still exists.
+    """
+    for cache_file in keys_dir.glob("*.json"):
+        try:
+            entries = dict(json.loads(cache_file.read_text()))
+        except (OSError, ValueError):
+            continue
+        for entry in entries.values():
+            access_id = entry.get("access_id")
+            if not access_id:
+                continue
+            try:
+                client.keys.revoke(access_id)
+            except EosdkError as exc:
+                warnings.warn(
+                    f"smoke teardown could not revoke S3 key {access_id}: {exc}", stacklevel=2
+                )
+
+
 @pytest.fixture
 def client(tmp_path: Path) -> Iterator[Client]:
     platform = os.environ.get("EOSDK_SMOKE_PLATFORM")
@@ -46,6 +85,7 @@ def client(tmp_path: Path) -> Iterator[Client]:
         discovery_cache_dir=tmp_path / "discovery",
     ) as c:
         yield c
+        _revoke_cached_keys(c, tmp_path / "s3keys")
 
 
 @pytest.fixture

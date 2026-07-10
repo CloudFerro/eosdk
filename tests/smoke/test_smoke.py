@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from eosdk import Client
+from tests.smoke.conftest import skip_on_key_quota
 
 pytestmark = pytest.mark.smoke
 
@@ -57,7 +58,7 @@ class TestAuthenticated:
         assert logged_in_client.auth.status().logged_in
 
     def test_ephemeral_key_lifecycle(self, logged_in_client: Client) -> None:
-        with logged_in_client.keys.ephemeral() as credentials:
+        with skip_on_key_quota(), logged_in_client.keys.ephemeral() as credentials:
             assert credentials.access_key
             assert credentials.require_secret()
             active = {c.access_key for c in logged_in_client.keys.list()}
@@ -82,7 +83,8 @@ class TestAuthenticated:
                 collection="sentinel-2-l2a", bbox=BBOX, limit=1, protocol="stac"
             )
         )
-        nodes = logged_in_client.list(product, via="exos", recursive=True)
+        with skip_on_key_quota():
+            nodes = logged_in_client.list(product, via="exos", recursive=True)
         target = next(n for n in nodes if not n.is_dir and n.name.endswith(".xml"))
         with logged_in_client.open(product, path=target.path, via="exos") as fh:
             head = fh.read(256)

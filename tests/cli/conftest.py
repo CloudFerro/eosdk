@@ -11,6 +11,18 @@ from tests.conftest import write_profile_config
 Invoke = Callable[..., Result]
 
 
+@pytest.fixture(autouse=True)
+def plain_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Force plain (no-ANSI) console output so assertions don't depend on the
+    dev shell: FORCE_COLOR in the environment makes the module-level Consoles
+    emit escape codes even under CliRunner."""
+    from eosdk.cli import _state
+
+    for console in (_state.stdout, _state.stderr):
+        monkeypatch.setattr(console, "_force_terminal", False)
+        monkeypatch.setattr(console, "_color_system", None)
+
+
 @pytest.fixture
 def runner() -> CliRunner:
     return CliRunner()

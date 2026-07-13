@@ -30,6 +30,12 @@ def skip_on_key_quota() -> Iterator[None]:
     try:
         yield
     except S3KeyLimitReached as exc:
+        # pytest runs with -q and no -rs, so a bare skip reason is invisible;
+        # warn so the quota problem surfaces in the warnings summary.
+        warnings.warn(
+            f"smoke test skipped: could not create credentials in S3 Keys Manager: {exc}",
+            stacklevel=3,
+        )
         pytest.skip(f"account precondition not met: {exc}")
 
 

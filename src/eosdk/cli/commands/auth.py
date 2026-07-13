@@ -83,8 +83,8 @@ def status(ctx: typer.Context) -> None:
         table.add_row("realm", info.realm)
         table.add_row("logged in", "yes" if info.logged_in else "no")
         if info.refresh_valid_until is not None:
-            expires = dt.datetime.fromtimestamp(info.refresh_valid_until, tz=dt.timezone.utc)
-            table.add_row("session valid until", expires.isoformat())
+            expires = dt.datetime.fromtimestamp(info.refresh_valid_until).astimezone()
+            table.add_row("session valid until (local time)", expires.isoformat(timespec="seconds"))
         stdout.print(table)
         if not info.logged_in:
             stderr.print("not logged in — run [bold]eo auth login[/bold]")

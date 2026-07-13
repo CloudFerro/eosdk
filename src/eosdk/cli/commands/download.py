@@ -17,7 +17,7 @@ from rich.progress import (
     TransferSpeedColumn,
 )
 
-from eosdk.cli._state import build_client, friendly_errors, get_state, stdout
+from eosdk.cli._state import build_client, friendly_errors, get_state, stderr, stdout
 from eosdk.models import Product
 
 if TYPE_CHECKING:
@@ -60,35 +60,64 @@ def download(
             products = [Product(id=pid, name=pid) for pid in ids]
 
         show_progress = not quiet and sys.stderr.isatty()
-        if show_progress:
-            with Progress(
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                DownloadColumn(),
-                TransferSpeedColumn(),
-                transient=True,
-            ) as progress:
-                tasks: dict[str, TaskID] = {}
+        if not quiet:
+            stderr.print(
+                f"downloading {len(products)} product(s) to {output} — press Ctrl+C to stop"
+            )
 
-                def on_event(event: ProgressEvent) -> None:
-                    task = tasks.get(event.product_id)
-                    if task is None:
-                        task = progress.add_task(event.product_id, total=event.bytes_total)
-                        tasks[event.product_id] = task
-                    progress.update(task, completed=event.bytes_done, total=event.bytes_total)
+        finished: set[str] = set()
 
+        def track(event: ProgressEvent) -> None:
+            if event.kind == "done":
+                finished.add(event.product_id)
+
+        try:
+            if show_progress:
+                with Progress(
+                    TextColumn("[progress.description]{task.description}"),
+                    BarColumn(),
+                    DownloadColumn(),
+                    TransferSpeedColumn(),
+                    transient=True,
+                ) as progress:
+                    tasks: dict[str, TaskID] = {}
+
+                    def on_event(event: ProgressEvent) -> None:
+                        track(event)
+                        task = tasks.get(event.product_id)
+                        if task is None:
+                            task = progress.add_task(event.product_id, total=event.bytes_total)
+                            tasks[event.product_id] = task
+                        progress.update(task, completed=event.bytes_done, total=event.bytes_total)
+
+                    reports = client.download(
+                        products,
+                        target=output,
+                        via=via,
+                        concurrency=concurrency,
+                        checksum=checksum,
+                        progress=on_event,
+                    )
+            else:
                 reports = client.download(
                     products,
                     target=output,
                     via=via,
                     concurrency=concurrency,
                     checksum=checksum,
-                    progress=on_event,
+                    progress=track,
                 )
-        else:
-            reports = client.download(
-                products, target=output, via=via, concurrency=concurrency, checksum=checksum
+        except KeyboardInterrupt:
+            resume_hint = (
+                "re-run the same command to resume"
+                if via == "exos"
+                else "re-run the same command to restart unfinished files"
             )
+            stderr.print(
+                f"[yellow]stopped[/yellow] — {len(finished)} of {len(products)} product(s) "
+                f"downloaded; {resume_hint}"
+            )
+            raise typer.Exit(130) from None
 
         for report in reports:
             verified = "verified" if report.checksum_verified else "no checksum"

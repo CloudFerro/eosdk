@@ -7,7 +7,12 @@ import pytest
 import respx
 
 from eosdk.catalogue.stac import StacCatalogue, decode_multihash
-from eosdk.exceptions import ProductNotFound, UnsupportedApiVersion, UnsupportedQueryFeature
+from eosdk.exceptions import (
+    CollectionNotFound,
+    ProductNotFound,
+    UnsupportedApiVersion,
+    UnsupportedQueryFeature,
+)
 from eosdk.models import Query
 from eosdk.transport import RetryPolicy, Transport
 
@@ -97,6 +102,9 @@ class TestConformance:
     def test_landing_page_fetched_once_across_searches(self, catalogue: StacCatalogue) -> None:
         landing_mock = respx.get(BASE).mock(return_value=httpx.Response(200, json=landing_page()))
         respx.post(SEARCH).mock(return_value=httpx.Response(200, json=feature_page([])))
+        respx.get(url__startswith=f"{BASE}/collections/").mock(
+            return_value=httpx.Response(200, json={"id": "x"})
+        )
         list(catalogue.search(Query(collection="A")))
         list(catalogue.search(Query(collection="B")))
         assert landing_mock.call_count == 1
@@ -116,6 +124,9 @@ class TestTranslation:
     @respx.mock
     def test_full_query_body(self, catalogue: StacCatalogue) -> None:
         respx.get(BASE).mock(return_value=httpx.Response(200, json=landing_page()))
+        respx.get(f"{BASE}/collections/SENTINEL-2").mock(
+            return_value=httpx.Response(200, json={"id": "SENTINEL-2"})
+        )
         search_mock = respx.post(SEARCH).mock(
             return_value=httpx.Response(200, json=feature_page([]))
         )
@@ -192,6 +203,94 @@ class TestPagination:
         follow_up = json.loads(search_mock.calls.last.request.content)
         assert follow_up["token"] == "x"
         assert follow_up["collections"] == ["SENTINEL-2"]  # merged, not replaced
+
+
+class TestUnknownCollection:
+    """An empty first page triggers one collection-existence probe (SPEC: STAC
+    answers unknown collections with an empty FeatureCollection, not an error)."""
+
+    SENTINEL_IDS = ("sentinel-1-grd", "sentinel-1-slc", "sentinel-2-l2a")
+
+    def _mock_search_empty(self) -> None:
+        respx.get(BASE).mock(return_value=httpx.Response(200, json=landing_page()))
+        respx.post(SEARCH).mock(return_value=httpx.Response(200, json=feature_page([])))
+
+    @respx.mock
+    def test_nonexistent_collection_raises_with_suggestions(self, catalogue: StacCatalogue) -> None:
+        self._mock_search_empty()
+        respx.get(f"{BASE}/collections/SENTINEL-1").mock(
+            return_value=httpx.Response(404, json={"code": "NotFoundError"})
+        )
+        respx.get(f"{BASE}/collections").mock(
+            return_value=httpx.Response(
+                200, json={"collections": [{"id": i} for i in self.SENTINEL_IDS]}
+            )
+        )
+        with pytest.raises(CollectionNotFound, match="SENTINEL-1") as excinfo:
+            list(catalogue.search(Query(collection="SENTINEL-1")))
+        assert excinfo.value.suggestions == ["sentinel-1-grd", "sentinel-1-slc"]
+        assert "odata" in str(excinfo.value)  # all-caps name -> OData vocabulary hint
+
+    @respx.mock
+    def test_lowercase_typo_gets_close_matches_without_odata_hint(
+        self, catalogue: StacCatalogue
+    ) -> None:
+        self._mock_search_empty()
+        respx.get(f"{BASE}/collections/sentinel-1-gdr").mock(
+            return_value=httpx.Response(404, json={"code": "NotFoundError"})
+        )
+        respx.get(f"{BASE}/collections").mock(
+            return_value=httpx.Response(
+                200, json={"collections": [{"id": i} for i in self.SENTINEL_IDS]}
+            )
+        )
+        with pytest.raises(CollectionNotFound) as excinfo:
+            list(catalogue.search(Query(collection="sentinel-1-gdr")))
+        assert "sentinel-1-grd" in excinfo.value.suggestions
+        assert "odata" not in str(excinfo.value)
+
+    @respx.mock
+    def test_existing_collection_empty_result_stays_empty(self, catalogue: StacCatalogue) -> None:
+        self._mock_search_empty()
+        probe = respx.get(f"{BASE}/collections/sentinel-1-grd").mock(
+            return_value=httpx.Response(200, json={"id": "sentinel-1-grd"})
+        )
+        assert list(catalogue.search(Query(collection="sentinel-1-grd"))) == []
+        assert probe.call_count == 1
+
+    @respx.mock
+    def test_non_empty_first_page_skips_the_probe(self, catalogue: StacCatalogue) -> None:
+        respx.get(BASE).mock(return_value=httpx.Response(200, json=landing_page()))
+        respx.post(SEARCH).mock(return_value=httpx.Response(200, json=feature_page([item()])))
+        probe = respx.get(url__startswith=f"{BASE}/collections/")
+        assert len(list(catalogue.search(Query(collection="sentinel-2-l2a")))) == 1
+        assert probe.call_count == 0
+
+    @respx.mock
+    def test_no_collection_in_query_skips_the_probe(self, catalogue: StacCatalogue) -> None:
+        self._mock_search_empty()
+        probe = respx.get(url__startswith=f"{BASE}/collections/")
+        assert list(catalogue.search(Query(bbox=(1.0, 2.0, 3.0, 4.0)))) == []
+        assert probe.call_count == 0
+
+    @respx.mock
+    def test_unreachable_probe_degrades_to_empty_result(self, catalogue: StacCatalogue) -> None:
+        self._mock_search_empty()
+        respx.get(f"{BASE}/collections/sentinel-1-grd").mock(side_effect=httpx.ConnectError("boom"))
+        assert list(catalogue.search(Query(collection="sentinel-1-grd"))) == []
+
+    @respx.mock
+    def test_suggestions_survive_failing_collections_listing(
+        self, catalogue: StacCatalogue
+    ) -> None:
+        self._mock_search_empty()
+        respx.get(f"{BASE}/collections/SENTINEL-1").mock(
+            return_value=httpx.Response(404, json={"code": "NotFoundError"})
+        )
+        respx.get(f"{BASE}/collections").mock(side_effect=httpx.ConnectError("boom"))
+        with pytest.raises(CollectionNotFound) as excinfo:
+            list(catalogue.search(Query(collection="SENTINEL-1")))
+        assert excinfo.value.suggestions == []
 
 
 class TestGetAndNormalization:

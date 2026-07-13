@@ -107,6 +107,32 @@ class UnsupportedCapability(EosdkError):
         super().__init__(message)
 
 
+class CollectionNotFound(EosdkError):
+    """A search referenced a collection the catalogue does not know.
+
+    Raised instead of silently returning an empty result (STAC servers answer
+    an unknown collection with an empty FeatureCollection, not an error)."""
+
+    def __init__(
+        self,
+        *,
+        collection: str,
+        backend: str,
+        suggestions: list[str] | None = None,
+        hint: str | None = None,
+    ) -> None:
+        self.collection = collection
+        self.backend = backend
+        self.suggestions = suggestions or []
+        self.hint = hint
+        message = f"collection {collection!r} does not exist in the {backend} catalogue"
+        if self.suggestions:
+            message = f"{message} — did you mean: {', '.join(self.suggestions)}?"
+        if hint is not None:
+            message = f"{message} ({hint})"
+        super().__init__(message)
+
+
 class ProductNotFound(EosdkError):
     """Catalogue get or download referenced a product the backend does not know."""
 

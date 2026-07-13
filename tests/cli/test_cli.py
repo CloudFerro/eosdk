@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import pytest
 import respx
 
 from eosdk.models import Product
@@ -119,6 +120,41 @@ class TestDownload:
         array = json.dumps([{"id": "uuid-a", "name": "PRODUCT_A"}])
         result = invoke("download", "-", "-o", str(tmp_path / "d"), input=array)
         assert result.exit_code == 0, result.output
+
+    def test_start_message_says_how_to_stop(
+        self, invoke: Invoke, platform_mocks: respx.Router, tmp_path: Path
+    ) -> None:
+        invoke("auth", "login", "--username", "alice", "--password-stdin", input="pw\n")
+        result = invoke("download", "uuid-a", "-o", str(tmp_path / "d"))
+        assert result.exit_code == 0, result.output
+        assert "press Ctrl+C to stop" in result.output
+
+    def test_quiet_suppresses_stop_hint(
+        self, invoke: Invoke, platform_mocks: respx.Router, tmp_path: Path
+    ) -> None:
+        invoke("auth", "login", "--username", "alice", "--password-stdin", input="pw\n")
+        result = invoke("download", "uuid-a", "-o", str(tmp_path / "d"), "--quiet")
+        assert result.exit_code == 0, result.output
+        assert "Ctrl+C" not in result.output
+
+    def test_keyboard_interrupt_reports_progress_and_exits_130(
+        self,
+        invoke: Invoke,
+        platform_mocks: respx.Router,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from eosdk.client import Client
+
+        def interrupted(self: Client, *args: object, **kwargs: object) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(Client, "download", interrupted)
+        invoke("auth", "login", "--username", "alice", "--password-stdin", input="pw\n")
+        result = invoke("download", "uuid-a", "-o", str(tmp_path / "d"))
+        assert result.exit_code == 130
+        assert "stopped" in result.output
+        assert "0 of 1 product(s)" in result.output
 
 
 class TestErrors:

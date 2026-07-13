@@ -3,6 +3,7 @@ import pytest
 from eosdk import exceptions
 from eosdk.exceptions import (
     AuthError,
+    CollectionNotFound,
     ConfigError,
     DownloadError,
     EndpointUnreachable,
@@ -22,6 +23,7 @@ ALL_ERRORS = [
     UnsupportedApiVersion,
     UnsupportedQueryFeature,
     UnsupportedCapability,
+    CollectionNotFound,
     ProductNotFound,
     DownloadError,
     QuotaExceeded,
@@ -84,6 +86,20 @@ def test_unsupported_capability_names_alternative() -> None:
     assert "zipper" in str(err)
     assert "open" in str(err)
     assert "exos" in str(err)
+
+
+def test_collection_not_found_lists_suggestions_and_hint() -> None:
+    err = CollectionNotFound(
+        collection="SENTINEL-1",
+        backend="stac",
+        suggestions=["sentinel-1-grd", "sentinel-1-slc"],
+        hint="mission-level names are OData vocabulary",
+    )
+    msg = str(err)
+    assert "SENTINEL-1" in msg
+    assert "sentinel-1-grd" in msg
+    assert "OData" in msg
+    assert err.suggestions == ["sentinel-1-grd", "sentinel-1-slc"]
 
 
 def test_product_not_found() -> None:

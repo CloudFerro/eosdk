@@ -3,12 +3,16 @@
 Retries, checksum verification, progress events, and bounded concurrency are
 implemented once here; backends provide ``_open_stream`` and declare whether
 they support resume (Zipper does not — its transfers restart from zero).
+
+A ``KeyboardInterrupt`` in the caller (Ctrl+C) cancels queued products and
+makes in-flight workers abort at the next chunk boundary before re-raising.
 """
 
 from __future__ import annotations
 
 import hashlib
 import os
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -116,6 +120,7 @@ class BaseDownloader:
 
         reports: list[DownloadReport] = []
         errors: list[EosdkError] = []
+        cancel = threading.Event()
         with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
             futures = [
                 pool.submit(
@@ -125,14 +130,23 @@ class BaseDownloader:
                     resume=resume,
                     checksum=checksum,
                     progress=progress,
+                    cancel=cancel,
                 )
                 for product in items
             ]
-            for future in futures:  # finish in-flight work even after a failure
-                try:
-                    reports.append(future.result())
-                except EosdkError as exc:
-                    errors.append(exc)
+            try:
+                for future in futures:  # finish in-flight work even after a failure
+                    try:
+                        reports.append(future.result())
+                    except EosdkError as exc:
+                        errors.append(exc)
+            except KeyboardInterrupt:
+                # Ctrl+C: drop queued products; in-flight workers notice the
+                # event within one chunk, so the pool joins promptly on exit.
+                cancel.set()
+                for future in futures:
+                    future.cancel()
+                raise
         if errors:
             raise errors[0]
         return reports
@@ -145,6 +159,7 @@ class BaseDownloader:
         resume: bool,
         checksum: bool,
         progress: Callable[[ProgressEvent], None] | None,
+        cancel: threading.Event,
     ) -> DownloadReport:
         def emit(kind: EventKind, done: int, total: int | None) -> None:
             if progress is not None:
@@ -156,11 +171,13 @@ class BaseDownloader:
 
         last_error: BaseException | None = None
         for attempt in range(1, self._retry.attempts + 1):
+            if cancel.is_set():  # batch interrupted while this product was queued
+                raise DownloadError("interrupted", product_id=product.id, backend=self.backend)
             if attempt > 1:
                 emit("retry", 0, None)
             try:
                 return self._attempt(
-                    product, target_dir, attempt=attempt, verify=checksum, emit=emit
+                    product, target_dir, attempt=attempt, verify=checksum, emit=emit, cancel=cancel
                 )
             except EosdkError:
                 emit("error", 0, None)
@@ -183,6 +200,7 @@ class BaseDownloader:
         attempt: int,
         verify: bool,
         emit: Callable[..., None],
+        cancel: threading.Event,
     ) -> DownloadReport:
         with self._open_stream(product) as stream:
             final_path = target_dir / stream.filename
@@ -195,14 +213,23 @@ class BaseDownloader:
                 hasher = hashlib.new(product.checksum.algorithm.replace("-", "_"))
 
             done = 0
+            interrupted = False
             # No resume support in this base path: truncate on every (re)attempt.
             with part_path.open("wb") as fh:
                 for chunk in stream.iter_bytes():
+                    if cancel.is_set():  # batch interrupted: abort between chunks
+                        interrupted = True
+                        break
                     fh.write(chunk)
                     if hasher is not None:
                         hasher.update(chunk)
                     done += len(chunk)
                     emit("chunk", done, total)
+
+        if interrupted:
+            # No resume here: an aborted partial file is unusable — drop it.
+            part_path.unlink(missing_ok=True)
+            raise DownloadError("interrupted", product_id=product.id, backend=self.backend)
 
         verified: bool | None = None
         if hasher is not None:

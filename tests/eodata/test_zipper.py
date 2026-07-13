@@ -1,5 +1,6 @@
 import hashlib
 import threading
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -182,6 +183,66 @@ class TestConcurrencyAndErrors:
         with pytest.raises(ProductNotFound, match="uuid-bad"):
             downloader.fetch([bad, good], tmp_path, concurrency=2)
         assert (tmp_path / "PRODUCT_uuid-good.zip").exists()  # in-flight work finished
+
+
+class TestInterrupt:
+    @respx.mock
+    def test_keyboard_interrupt_cancels_queued_and_aborts_in_flight(
+        self, downloader: ZipperDownloader, tmp_path: Path
+    ) -> None:
+        """Ctrl+C (KeyboardInterrupt at future.result()) must re-raise, cancel
+        queued products, and stop the in-flight transfer within one chunk."""
+
+        def interrupt(request: httpx.Request) -> httpx.Response:
+            raise KeyboardInterrupt  # stands in for Ctrl+C reaching the main thread
+
+        def slow_stream(request: httpx.Request) -> httpx.Response:
+            def gen() -> Iterator[bytes]:
+                for _ in range(100):
+                    yield b"x" * 1024
+                    time.sleep(0.01)
+
+            return httpx.Response(200, content=gen())
+
+        touched: list[str] = []
+
+        def recording(request: httpx.Request) -> httpx.Response:
+            touched.append(str(request.url))
+            return httpx.Response(200, content=PAYLOAD)
+
+        respx.get(value_url("uuid-1")).mock(side_effect=interrupt)
+        respx.get(value_url("uuid-2")).mock(side_effect=slow_stream)
+        for pid in ("uuid-3", "uuid-4"):
+            respx.get(value_url(pid)).mock(side_effect=recording)
+
+        products = [product(f"uuid-{n}", with_checksum=False) for n in range(1, 5)]
+        with pytest.raises(KeyboardInterrupt):
+            downloader.fetch(products, tmp_path, concurrency=1)
+        assert touched == []  # queued products never started
+        assert not list(tmp_path.iterdir())  # no completed files, no .part litter
+
+    @respx.mock
+    def test_cancel_event_aborts_transfer_and_removes_part_file(
+        self, downloader: ZipperDownloader, tmp_path: Path
+    ) -> None:
+        cancel = threading.Event()
+
+        def gen() -> Iterator[bytes]:
+            yield PAYLOAD[: len(PAYLOAD) // 2]
+            cancel.set()
+            yield PAYLOAD[len(PAYLOAD) // 2 :]
+
+        respx.get(value_url("uuid-1")).mock(return_value=httpx.Response(200, content=gen()))
+        with pytest.raises(DownloadError, match="interrupted"):
+            downloader._fetch_one(
+                product(with_checksum=False),
+                tmp_path,
+                resume=False,
+                checksum=True,
+                progress=None,
+                cancel=cancel,
+            )
+        assert not list(tmp_path.iterdir())
 
 
 class TestResumeNoOp:

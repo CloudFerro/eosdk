@@ -139,6 +139,7 @@ class ExosDownloader:
         target_dir.mkdir(parents=True, exist_ok=True)
         reports: list[DownloadReport] = []
         errors: list[Exception] = []
+        cancel = threading.Event()
         with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
             futures = [
                 pool.submit(
@@ -148,14 +149,23 @@ class ExosDownloader:
                     resume=resume,
                     checksum=checksum,
                     progress=progress,
+                    cancel=cancel,
                 )
                 for product in items
             ]
-            for future in futures:
-                try:
-                    reports.append(future.result())
-                except Exception as exc:  # finish in-flight, then surface first error
-                    errors.append(exc)
+            try:
+                for future in futures:
+                    try:
+                        reports.append(future.result())
+                    except Exception as exc:  # finish in-flight, then surface first error
+                        errors.append(exc)
+            except KeyboardInterrupt:
+                # Ctrl+C: drop queued products; in-flight workers stop at the
+                # next range boundary with resume state already on disk.
+                cancel.set()
+                for future in futures:
+                    future.cancel()
+                raise
         if errors:
             raise errors[0]
         return reports
@@ -183,6 +193,7 @@ class ExosDownloader:
         resume: bool,
         checksum: bool,
         progress: Callable[[ProgressEvent], None] | None,
+        cancel: threading.Event,
     ) -> DownloadReport:
         def emit(kind: EventKind, done: int, total: int | None) -> None:
             if progress is not None:
@@ -200,13 +211,22 @@ class ExosDownloader:
         _, product_prefix = self._bucket_and_prefix(product)
         written: list[Path] = []
         for bucket, key, _size in objects:
+            if cancel.is_set():  # batch interrupted: sidecar state resumes the rest
+                raise DownloadError("interrupted", product_id=product.id, backend=self.backend)
             relative = (
                 key[len(product_prefix) :].lstrip("/") if key != product_prefix else Path(key).name
             )
             file_target = product_root / relative
             file_target.parent.mkdir(parents=True, exist_ok=True)
             done = self._download_object(
-                bucket, key, file_target, product, resume=resume, emit=emit, done_offset=done
+                bucket,
+                key,
+                file_target,
+                product,
+                resume=resume,
+                emit=emit,
+                done_offset=done,
+                cancel=cancel,
             )
             written.append(file_target)
 
@@ -242,6 +262,7 @@ class ExosDownloader:
         resume: bool,
         emit: Callable[..., None],
         done_offset: int,
+        cancel: threading.Event,
     ) -> int:
         head = self._head(bucket, key, product.id)
         total_size: int = head["ContentLength"]
@@ -278,6 +299,8 @@ class ExosDownloader:
 
             def fetch_range(byte_range: tuple[int, int]) -> None:
                 nonlocal done
+                if cancel.is_set():  # stop at a range boundary; completed ranges resume
+                    raise DownloadError("interrupted", product_id=product.id, backend=self.backend)
                 start, end = byte_range
                 response = self._s3().get_object(
                     Bucket=bucket,

@@ -51,7 +51,7 @@ if not client.auth.status().logged_in:
     client.auth.login("you@example.com", getpass.getpass())  # cached under ~/.config/eosdk/
 
 products = client.search(
-    collection="SENTINEL-2",
+    collection="sentinel-2-l2a",
     bbox=(22.5, 52.9, 24.0, 53.5),
     datetime="2026-06-01/2026-06-30",
     filters={"cloudCover": "<20"},
@@ -61,6 +61,12 @@ products = client.search(
 client.download(products, target="./data", via="zipper", concurrency=4)
 ```
 
+> Collection ids are backend vocabulary, not translated by the SDK. STAC (the
+> default protocol) uses product-level ids like `sentinel-1-grd` or
+> `sentinel-2-l2a`; mission-level names like `SENTINEL-1` belong to OData
+> (`protocol="odata"` / `--protocol odata`). List what a catalogue offers with
+> `client.collections()`.
+
 ## Quickstart (CLI)
 
 Log in once — the session is cached per profile under `~/.config/eosdk/` and
@@ -68,10 +74,15 @@ reused by every later `eo` or library call:
 
 ```bash
 eo auth login --username you@example.com   # prompts for the password
-eo search --collection SENTINEL-1 --bbox 22.5,52.9,24.0,53.5 \
-          --from 2026-06-01 --to 2026-06-30 --json \
+eo search --collection sentinel-1-grd --bbox 22.5,52.9,24.0,53.5 \
+          --from 2026-06-01 --to 2026-06-30 --limit 7 --json \
   | eo download - --via zipper -o ./data
 ```
+
+Stop a running download with `Ctrl+C`: queued products are dropped and
+in-flight transfers abort. Re-running the same command picks the batch up
+again — `--via exos` resumes partially downloaded files, `--via zipper`
+restarts them from scratch.
 
 > Note: bare `eo auth login` uses the OAuth device flow, but the default CDSE
 > deployment currently has that grant disabled for its public client

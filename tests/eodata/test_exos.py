@@ -1,5 +1,6 @@
 import hashlib
 import os
+import threading
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -163,6 +164,38 @@ class TestResume:
 
         (report2,) = downloader.fetch(product, tmp_path, resume=True)
         assert (report2.path / "product_A.zip").read_bytes() == new_payload  # full restart
+
+
+class TestInterrupt:
+    def test_cancel_event_stops_at_range_boundary_and_keeps_resume_state(
+        self, downloader: ExosDownloader, tmp_path: Path, s3: Any
+    ) -> None:
+        """A cancelled transfer keeps its part file + sidecar; a re-run resumes."""
+        cancel = threading.Event()
+        product = single_product()
+        original = downloader._s3().get_object
+
+        def cancelling_get_object(**kwargs: Any) -> Any:
+            result = original(**kwargs)
+            cancel.set()  # interrupt after the first completed range
+            return result
+
+        downloader._client.get_object = cancelling_get_object  # type: ignore[union-attr]
+        with pytest.raises(DownloadError, match="interrupted"):
+            downloader._fetch_one(
+                product, tmp_path, resume=True, checksum=True, progress=None, cancel=cancel
+            )
+
+        file_path = tmp_path / "product_A" / "product_A.zip"
+        part = file_path.with_name(file_path.name + ".part")
+        assert part.exists()  # partial bytes kept for resume
+        assert state_path(file_path).exists()  # sidecar records completed ranges
+
+        downloader._client.get_object = original  # type: ignore[union-attr]
+        (report,) = downloader.fetch(product, tmp_path, resume=True)
+        assert file_path.read_bytes() == SINGLE_PAYLOAD
+        assert report.checksum_verified is True
+        assert not state_path(file_path).exists()
 
 
 class TestList:

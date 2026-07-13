@@ -13,6 +13,7 @@ possible, the config knob that fixes it.
 | `UnsupportedApiVersion` | a service advertises a version outside the supported range |
 | `UnsupportedQueryFeature` | a query construct the chosen backend cannot express |
 | `UnsupportedCapability` | no available strategy supports the operation (`download`/`list`/`open`) |
+| `CollectionNotFound` | a search named a collection the catalogue does not know (carries `suggestions`) |
 | `ProductNotFound` | catalogue get / download referenced an unknown product |
 | `DownloadError` | transfer failed after retries (incl. checksum mismatch) |
 | `QuotaExceeded` | service-side 429 (carries `retry_after` when provided) |

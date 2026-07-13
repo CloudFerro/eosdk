@@ -3,6 +3,13 @@
 ## Unreleased (Phase 4 — hardening)
 
 ### Added
+- `CollectionNotFound`: a STAC search whose first page comes back empty now
+  probes `GET /collections/{id}` (one extra request, failure path only) to
+  distinguish "no products matched" from "no such collection" — STAC servers
+  answer unknown collections with an empty FeatureCollection, not an error.
+  The message lists close collection-id matches and, for all-caps
+  mission-level names (`SENTINEL-1`), points at the OData protocol whose
+  vocabulary they belong to.
 - Discovery document `auth.client_id` (optional): a deployment can advertise
   its public OAuth client for the SDK/CLI; projected onto
   `keycloak_client_id` with the usual precedence (kwargs/env/profile pins
@@ -18,6 +25,12 @@
 - Release workflow: tag-triggered test matrix -> build -> PyPI Trusted
   Publishing (rc tags to TestPyPI) -> GitHub release; `RELEASING.md` tracks the
   pre-1.0 checklist (license decision and platform credentials still open).
+
+### Fixed
+- README quickstart examples used OData mission names (`SENTINEL-1`,
+  `SENTINEL-2`) with the default STAC protocol, which silently returned zero
+  products; they now use STAC collection ids (`sentinel-1-grd`,
+  `sentinel-2-l2a`) and note the vocabulary split.
 
 
 ## 0.3.0 (Phase 3 — platform)

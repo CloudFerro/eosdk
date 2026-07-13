@@ -8,12 +8,19 @@ including the POST body-merge style.
 
 from __future__ import annotations
 
+import difflib
 import os.path
 import re
 from typing import TYPE_CHECKING, Any
 
 from eosdk.catalogue.query import PROPERTY_ALIASES, parse_filters
-from eosdk.exceptions import ProductNotFound, UnsupportedApiVersion, UnsupportedQueryFeature
+from eosdk.exceptions import (
+    CollectionNotFound,
+    EosdkError,
+    ProductNotFound,
+    UnsupportedApiVersion,
+    UnsupportedQueryFeature,
+)
 from eosdk.models import Checksum, Collection, Page, Product, Query, Queryable, SearchResult
 from eosdk.transport import route
 
@@ -183,6 +190,8 @@ class StacCatalogue:
             if matched is not None:
                 result._matched = int(matched)  # backend count feeds len() lazily
             products = [_item_to_product(item) for item in page_doc.get("features", [])]
+            if token is None and not products and query.collection is not None:
+                self._raise_if_unknown_collection(query.collection)
             nonlocal remaining
             if remaining is not None:
                 products = products[:remaining]
@@ -197,6 +206,50 @@ class StacCatalogue:
     def raw_search(self, body: dict[str, Any]) -> Any:
         """Escape hatch: POST an arbitrary ItemSearch body, return raw JSON."""
         return self._post(self.capabilities().search_url, body)
+
+    def _raise_if_unknown_collection(self, collection: str) -> None:
+        """Distinguish "no products matched" from "no such collection".
+
+        STAC servers (CDSE included) answer a search over an unknown
+        collection with an empty FeatureCollection, not an error — a classic
+        silent-zero trap. An empty first page costs one extra GET to tell the
+        two apart; verification failures degrade to the plain empty result.
+        """
+        url = route(self._base, "collections/{id}", id=collection)
+        try:
+            response = self._transport.request(
+                "GET",
+                url,
+                service="catalogue_stac",
+                auth=self._auth.httpx_auth() if self._auth else None,
+            )
+        except EosdkError:
+            return
+        if response.status_code != 404:
+            return
+        hint = None
+        if collection == collection.upper():
+            hint = (
+                "mission-level names like this are OData vocabulary — "
+                "use the odata protocol, or a STAC collection id"
+            )
+        raise CollectionNotFound(
+            collection=collection,
+            backend=self.backend,
+            suggestions=self._similar_collections(collection),
+            hint=hint,
+        )
+
+    def _similar_collections(self, name: str) -> list[str]:
+        try:
+            ids = [c.id for c in self.collections()]
+        except EosdkError:
+            return []
+        lowered = name.lower()
+        prefixed = [i for i in ids if i.lower().startswith(lowered)]
+        if prefixed:
+            return prefixed[:8]
+        return difflib.get_close_matches(lowered, ids, n=5, cutoff=0.6)
 
     def get(self, product_id: str) -> Product:
         body = {"ids": [product_id], "limit": 1}

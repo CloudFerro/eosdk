@@ -158,9 +158,7 @@ class TestKeyLimit:
             provider.create()
 
     @respx.mock
-    def test_limit_wording_on_other_routes_stays_auth_error(
-        self, provider: S3KeysProvider
-    ) -> None:
+    def test_limit_wording_on_other_routes_stays_auth_error(self, provider: S3KeysProvider) -> None:
         # Only POST /credentials can hit the cap; a validation error elsewhere
         # that happens to say "limit" must not be misread as the key cap.
         respx.delete(f"{CREDENTIALS_URL}/access_id/AKIA001").mock(

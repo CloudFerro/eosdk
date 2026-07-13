@@ -80,6 +80,39 @@ class TestDoctor:
         zipper_ready = next(r for r in services["results"] if r["name"] == "Zipper eodata")
         assert "cached" not in zipper_ready["detail"]  # live verdict, not the stored one
 
+    def test_odata_error_status_fails(
+        self, invoke: Invoke, platform_mocks: respx.Router, monkeypatch
+    ) -> None:
+        """A non-2xx from the OData Products endpoint must report ✗, not ✓."""
+        odata = "https://odata.example.eu"
+        monkeypatch.setenv("EOSDK_CATALOGUE_ODATA_URL", odata)
+        install_ready_routes(platform_mocks)
+        platform_mocks.get(f"{odata}/odata/v1/Products").mock(
+            return_value=httpx.Response(404)
+        )
+        result = invoke("doctor", "--json")
+        sections = json.loads(result.output)
+        services = next(s for s in sections if s["section"] == "Services")
+        check = next(r for r in services["results"] if r["name"] == "OData catalogue")
+        assert check["ok"] is False
+        assert "404" in check["detail"]
+        assert result.exit_code == 1
+
+    def test_odata_reachable_ok(
+        self, invoke: Invoke, platform_mocks: respx.Router, monkeypatch
+    ) -> None:
+        odata = "https://odata.example.eu"
+        monkeypatch.setenv("EOSDK_CATALOGUE_ODATA_URL", odata)
+        install_ready_routes(platform_mocks)
+        platform_mocks.get(f"{odata}/odata/v1/Products").mock(
+            return_value=httpx.Response(200, json={"value": []})
+        )
+        result = invoke("doctor", "--json")
+        sections = json.loads(result.output)
+        services = next(s for s in sections if s["section"] == "Services")
+        check = next(r for r in services["results"] if r["name"] == "OData catalogue")
+        assert check["ok"] is True
+
     def test_nothing_configured_all_skips_exit_zero(self, invoke_bare: Invoke) -> None:
         result = invoke_bare("doctor")
         assert result.exit_code == 0, result.output

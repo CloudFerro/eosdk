@@ -146,16 +146,19 @@ def _services_section(client: Client, *, force_ready: bool = False) -> Section:
         return f"item-search at {capabilities.search_url}"
 
     def odata() -> str:
+        # CDSE serves no service document at odata/v1 (it 404s), so probe the
+        # Products resource itself with a minimal query.
         base = client.config.require("catalogue_odata", service="catalogue_odata")
         response = client._transport.request(
-            "GET", route(base, "odata/v1"), service="catalogue_odata", timeout=PROBE_TIMEOUT
+            "GET",
+            route(base, "odata/v1/Products"),
+            service="catalogue_odata",
+            params={"$top": "1"},
+            timeout=PROBE_TIMEOUT,
         )
-        return f"service document HTTP {response.status_code}"
-
-    def zipper() -> str:
-        base = client.config.require("zipper", service="zipper")
-        response = client._transport.request("HEAD", base, service="zipper", timeout=PROBE_TIMEOUT)
-        return f"HEAD {base} -> HTTP {response.status_code}"
+        if not response.is_success:
+            raise EosdkError(f"Products endpoint returned HTTP {response.status_code}")
+        return f"Products endpoint HTTP {response.status_code}"
 
     def exos() -> str:
         client._exos_downloader()._s3().list_buckets()
@@ -168,7 +171,6 @@ def _services_section(client: Client, *, force_ready: bool = False) -> Section:
     for fieldname, name, probe, hint in (
         ("catalogue_stac", "STAC catalogue", stac, None),
         ("catalogue_odata", "OData catalogue", odata, None),
-        ("zipper", "Zipper", zipper, None),
         ("zipper", "Zipper eodata", eodata_ready("zipper"), ready_hint),
         ("exos_endpoint", "Exos (S3)", exos, None),
         ("exos_endpoint", "Exos eodata", eodata_ready("exos_endpoint"), ready_hint),

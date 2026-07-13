@@ -53,7 +53,10 @@ comments and layout.
 | `EOSDK_TLS_VERIFY` | set `0` to disable TLS verification (dev only) |
 
 Base URLs are **version-free**: the SDK appends `/v1`-style segments itself.
-`eo doctor` flags bases that end in a version segment.
+`eo doctor` flags bases that end in a version segment. The one exception is
+the STAC catalogue URL: it points at the self-describing STAC landing page
+and is used as-is, so a version segment there is fine (CDSE's landing page
+lives under `/v1`).
 
 ## Security
 

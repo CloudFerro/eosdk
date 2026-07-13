@@ -24,3 +24,14 @@ def test_cdse_defaults() -> None:
 
 def test_env_var_map_matches_model() -> None:
     assert set(defaults.ENV_VAR_MAP) == set(Endpoints.model_fields)
+
+
+def test_defaults_pass_doctor_version_check() -> None:
+    """A fresh install must not fail `eo doctor` (unit tests run with defaults
+    blanked, so this pairing is asserted here explicitly)."""
+    from eosdk.config.settings import URL_FIELDS
+    from eosdk.doctor import _VERSION_CHECK_EXEMPT, _VERSION_SEGMENT
+
+    for fieldname in URL_FIELDS - _VERSION_CHECK_EXEMPT:
+        value = getattr(REAL_DEFAULTS, fieldname)
+        assert value is None or not _VERSION_SEGMENT.search(value), fieldname

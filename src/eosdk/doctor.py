@@ -21,6 +21,10 @@ if TYPE_CHECKING:
 
 PROBE_TIMEOUT = 5.0  # doctor must never hang
 _VERSION_SEGMENT = re.compile(r"/v\d+/?$")
+# catalogue_stac is the URL of a self-describing STAC landing page, used
+# verbatim (the SDK never appends /vN to it) — and CDSE's landing page
+# itself lives under /v1, so a version segment there is not a mistake.
+_VERSION_CHECK_EXEMPT = frozenset({"catalogue_stac"})
 
 
 @dataclass(frozen=True)
@@ -70,7 +74,11 @@ def _config_section(client: Client) -> Section:
         if value.value is None:
             continue
         label = f"{fieldname} URL" if fieldname in URL_FIELDS else fieldname
-        if fieldname in URL_FIELDS and _VERSION_SEGMENT.search(value.value):
+        if (
+            fieldname in URL_FIELDS
+            and fieldname not in _VERSION_CHECK_EXEMPT
+            and _VERSION_SEGMENT.search(value.value)
+        ):
             section.results.append(
                 CheckResult(
                     label,

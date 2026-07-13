@@ -60,3 +60,19 @@ class TestDoctor:
         assert env_result is not None
         assert env_result.exit_code == 1
         assert "version segment" in env_result.output
+
+    def test_stac_version_segment_not_flagged(
+        self, invoke_bare: Invoke, platform_mocks: respx.Router
+    ) -> None:
+        """The STAC URL is a self-describing landing page — /v1 there is valid."""
+        import os
+
+        os.environ["EOSDK_CATALOGUE_STAC_URL"] = "https://stac.example.eu/v1"
+        try:
+            result = invoke_bare("doctor", "--json")
+        finally:
+            del os.environ["EOSDK_CATALOGUE_STAC_URL"]
+        sections = json.loads(result.output)
+        config = next(s for s in sections if s["section"] == "Config")
+        stac = next(r for r in config["results"] if r["name"] == "catalogue_stac URL")
+        assert stac["ok"] is True

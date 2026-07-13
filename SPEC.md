@@ -396,7 +396,10 @@ bust the cache.
 - If a configured or discovered base already contains a version segment
   (e.g. ends in `/v1`), the SDK does **not** strip it — this is a configuration
   error that would produce `…/v1/v1`. `eo doctor` flags a base whose final path
-  segment matches `v\d+` as a likely mistake.
+  segment matches `v\d+` as a likely mistake. Exception: `catalogue_stac` is
+  the URL of the self-describing STAC landing page (§6.2), used verbatim — the
+  SDK never appends `/vN` to it, and CDSE's landing page itself lives under
+  `/v1`, so doctor does not flag it.
 - `api_version` is **optional** per service in the discovery document. Services
   whose protocol versioning is owned externally (e.g. Exos over S3/boto3) omit it
   and have no version-aware routes.

@@ -243,6 +243,7 @@ class TestLabeledReuse:
         assert renewed.access_key == "AKIA002"
 
     def test_secret_store_file_permissions(self, provider: S3KeysProvider, tmp_path: Path) -> None:
+        import os
         import stat
 
         with respx.mock:
@@ -250,7 +251,8 @@ class TestLabeledReuse:
             provider.create(label="my-pipeline")
         store_file = tmp_path / "s3keys" / "test.json"
         assert store_file.is_file()
-        assert stat.S_IMODE(store_file.stat().st_mode) == 0o600
+        if os.name != "nt":  # Windows has no POSIX modes
+            assert stat.S_IMODE(store_file.stat().st_mode) == 0o600
 
 
 class TestEphemeral:

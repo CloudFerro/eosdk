@@ -67,9 +67,9 @@ class DiscoveryCache:
     def put(self, url: str, raw: dict[str, Any]) -> None:
         self._dir.mkdir(parents=True, exist_ok=True)
         self._dir.chmod(0o700)
+        # mkstemp creates the file 0600 where POSIX modes exist; no fchmod (absent on Windows)
         fd, tmp_name = tempfile.mkstemp(dir=self._dir, suffix=".tmp")
         try:
-            os.fchmod(fd, 0o600)
             with os.fdopen(fd, "w") as fh:
                 json.dump({"fetched_at": self._now(), "document": raw}, fh)
             os.replace(tmp_name, self._path(url))

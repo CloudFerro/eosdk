@@ -80,9 +80,9 @@ class TokenCache:
     def save(self, state: TokenState) -> None:
         self._dir.mkdir(parents=True, exist_ok=True)
         self._dir.chmod(0o700)
+        # mkstemp creates the file 0600 where POSIX modes exist; no fchmod (absent on Windows)
         fd, tmp_name = tempfile.mkstemp(dir=self._dir, suffix=".tmp")
         try:
-            os.fchmod(fd, 0o600)
             with os.fdopen(fd, "w") as fh:
                 json.dump(asdict(state), fh)
             os.replace(tmp_name, self._path)

@@ -287,46 +287,46 @@ class ExosDownloader:
             )
             part_path.unlink(missing_ok=True)
 
-        # pre-allocate so pwrite at offsets is safe
+        # pre-allocate so offset writes land inside the file
         if not part_path.exists() or part_path.stat().st_size != total_size:
             with part_path.open("wb") as fh:
                 fh.truncate(total_size)
 
         done = done_offset + (total_size - plan.bytes_remaining)
         state_lock = threading.Lock()
-        fd = os.open(part_path, os.O_WRONLY)
-        try:
 
-            def fetch_range(byte_range: tuple[int, int]) -> None:
-                nonlocal done
-                if cancel.is_set():  # stop at a range boundary; completed ranges resume
-                    raise DownloadError("interrupted", product_id=product.id, backend=self.backend)
-                start, end = byte_range
-                response = self._s3().get_object(
-                    Bucket=bucket,
-                    Key=key,
-                    Range=f"bytes={start}-{end}",
-                    **({"IfMatch": etag} if etag else {}),
-                )
-                body = response["Body"].read()
-                os.pwrite(fd, body, start)
-                os.fsync(fd)  # bytes durable before the state file admits them
-                with state_lock:
-                    assert state is not None
-                    state.mark_complete(start, end)
-                    save_state(target, state)
-                    done += len(body)
-                    emit("chunk", done, None)
+        def fetch_range(byte_range: tuple[int, int]) -> None:
+            nonlocal done
+            if cancel.is_set():  # stop at a range boundary; completed ranges resume
+                raise DownloadError("interrupted", product_id=product.id, backend=self.backend)
+            start, end = byte_range
+            response = self._s3().get_object(
+                Bucket=bucket,
+                Key=key,
+                Range=f"bytes={start}-{end}",
+                **({"IfMatch": etag} if etag else {}),
+            )
+            body = response["Body"].read()
+            # one handle per range: seek+write is portable where os.pwrite is not (Windows)
+            with part_path.open("r+b") as fh:
+                fh.seek(start)
+                fh.write(body)
+                fh.flush()
+                os.fsync(fh.fileno())  # bytes durable before the state file admits them
+            with state_lock:
+                assert state is not None
+                state.mark_complete(start, end)
+                save_state(target, state)
+                done += len(body)
+                emit("chunk", done, None)
 
-            if plan.ranges:
-                if self._max_ranges_per_file > 1 and len(plan.ranges) > 1:
-                    with ThreadPoolExecutor(max_workers=self._max_ranges_per_file) as pool:
-                        list(pool.map(fetch_range, plan.ranges))  # consume to raise errors
-                else:
-                    for byte_range in plan.ranges:
-                        fetch_range(byte_range)
-        finally:
-            os.close(fd)
+        if plan.ranges:
+            if self._max_ranges_per_file > 1 and len(plan.ranges) > 1:
+                with ThreadPoolExecutor(max_workers=self._max_ranges_per_file) as pool:
+                    list(pool.map(fetch_range, plan.ranges))  # consume to raise errors
+            else:
+                for byte_range in plan.ranges:
+                    fetch_range(byte_range)
 
         os.replace(part_path, target)
         clear_state(target)

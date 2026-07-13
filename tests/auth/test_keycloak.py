@@ -1,3 +1,4 @@
+import os
 import stat
 import threading
 from pathlib import Path
@@ -66,8 +67,9 @@ class TestLogin:
 
         cache_file = tmp_path / "tokens" / "test.json"
         assert cache_file.is_file()
-        assert stat.S_IMODE(cache_file.stat().st_mode) == 0o600
-        assert stat.S_IMODE(cache_file.parent.stat().st_mode) == 0o700
+        if os.name != "nt":  # Windows has no POSIX modes; NTFS ACLs are out of scope
+            assert stat.S_IMODE(cache_file.stat().st_mode) == 0o600
+            assert stat.S_IMODE(cache_file.parent.stat().st_mode) == 0o700
 
     def test_bad_credentials(self, auth: KeycloakAuth, mock_oidc: respx.Router) -> None:
         mock_oidc.post(TOKEN_URL).mock(return_value=oauth_error("invalid_grant", 401))

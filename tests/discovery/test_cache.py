@@ -1,4 +1,5 @@
 import json
+import os
 import stat
 from collections.abc import Iterator
 from pathlib import Path
@@ -105,7 +106,8 @@ class TestCache:
         respx.get(URL).mock(return_value=httpx.Response(200, json=spec_document()))
         fetch_document(URL, cache, transport)
         (cache_file,) = (tmp_path / "discovery").glob("*.json")
-        assert stat.S_IMODE(cache_file.stat().st_mode) == 0o600
+        if os.name != "nt":  # Windows has no POSIX modes
+            assert stat.S_IMODE(cache_file.stat().st_mode) == 0o600
         payload = json.loads(cache_file.read_text())
         assert "fetched_at" in payload  # timestamp in-file, not mtime
 

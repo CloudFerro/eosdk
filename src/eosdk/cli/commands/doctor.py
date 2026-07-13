@@ -13,13 +13,17 @@ from eosdk.cli._state import build_client, friendly_errors, get_state, stdout
 def doctor(
     ctx: typer.Context,
     as_json: Annotated[bool, typer.Option("--json")] = False,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="probe eodata readiness live, bypassing the rate limit"),
+    ] = False,
 ) -> None:
     """Check config, auth, and service health; exit non-zero on any failure."""
     from eosdk.doctor import run_doctor
 
     state = get_state(ctx)
     with friendly_errors(state), build_client(state) as client:
-        sections = run_doctor(client)
+        sections = run_doctor(client, force_ready=force)
 
     if as_json:
         print(

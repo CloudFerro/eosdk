@@ -38,6 +38,7 @@ def invoke(runner: CliRunner, tmp_path: Path) -> Invoke:
         token_cache_dir=tmp_path / "tokens",
         keys_cache_dir=tmp_path / "s3keys",
         discovery_cache_dir=tmp_path / "discovery",
+        readiness_cache_dir=tmp_path / "readiness",
     )
 
     def _invoke(*args: str, **kwargs: object) -> Result:
@@ -55,6 +56,7 @@ def invoke_bare(runner: CliRunner, tmp_path: Path) -> Invoke:
         token_cache_dir=tmp_path / "tokens",
         keys_cache_dir=tmp_path / "s3keys",
         discovery_cache_dir=tmp_path / "discovery",
+        readiness_cache_dir=tmp_path / "readiness",
     )
     (tmp_path / "empty").mkdir()
 

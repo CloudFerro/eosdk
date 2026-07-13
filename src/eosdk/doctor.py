@@ -115,8 +115,31 @@ def _auth_section(client: Client) -> Section:
     return section
 
 
-def _services_section(client: Client) -> Section:
+def _services_section(client: Client, *, force_ready: bool = False) -> Section:
+    from eosdk.readiness import ReadinessProbe
+
     section = Section("Services")
+    readiness = ReadinessProbe(client._readiness_cache_dir)
+
+    def eodata_ready(fieldname: str) -> Callable[[], str]:
+        def check() -> str:
+            base = client.config.require(fieldname, service=fieldname)
+            status = readiness.check(
+                client._transport,
+                base,
+                service=fieldname,
+                timeout=PROBE_TIMEOUT,
+                force=force_ready,
+            )
+            detail = status.detail
+            if status.cached:
+                wait = readiness.interval - (status.age or 0.0)
+                detail += f" [cached {status.age:.0f}s ago; next live probe in {wait:.0f}s]"
+            if not status.ready:
+                raise EosdkError(detail)
+            return detail
+
+        return check
 
     def stac() -> str:
         capabilities = client._stac_catalogue().capabilities()
@@ -138,11 +161,17 @@ def _services_section(client: Client) -> Section:
         client._exos_downloader()._s3().list_buckets()
         return "S3 endpoint reachable with managed keys"
 
-    for fieldname, name, probe in (
-        ("catalogue_stac", "STAC catalogue", stac),
-        ("catalogue_odata", "OData catalogue", odata),
-        ("zipper", "Zipper", zipper),
-        ("exos_endpoint", "Exos (S3)", exos),
+    ready_hint = (
+        "the eodata store behind this service reports itself unavailable — "
+        "this is service-side, not a config problem; probes are rate-limited, retry later"
+    )
+    for fieldname, name, probe, hint in (
+        ("catalogue_stac", "STAC catalogue", stac, None),
+        ("catalogue_odata", "OData catalogue", odata, None),
+        ("zipper", "Zipper", zipper, None),
+        ("zipper", "Zipper eodata", eodata_ready("zipper"), ready_hint),
+        ("exos_endpoint", "Exos (S3)", exos, None),
+        ("exos_endpoint", "Exos eodata", eodata_ready("exos_endpoint"), ready_hint),
     ):
         try:
             client.config.require(fieldname, service=fieldname)
@@ -150,7 +179,7 @@ def _services_section(client: Client) -> Section:
             section.results.append(_skip(name, str(exc)))
             continue
         section.results.append(
-            _probe(name, probe, hint=f"check the {fieldname} endpoint in your profile")
+            _probe(name, probe, hint=hint or f"check the {fieldname} endpoint in your profile")
         )
     return section
 
@@ -191,10 +220,10 @@ def _discovery_section(client: Client) -> Section:
     return section
 
 
-def run_doctor(client: Client) -> list[Section]:
+def run_doctor(client: Client, *, force_ready: bool = False) -> list[Section]:
     return [
         _config_section(client),
         _discovery_section(client),
         _auth_section(client),
-        _services_section(client),
+        _services_section(client, force_ready=force_ready),
     ]

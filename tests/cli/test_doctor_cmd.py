@@ -4,7 +4,12 @@ import httpx
 import respx
 
 from tests.cli.conftest import Invoke
-from tests.conftest import ZIPPER
+from tests.conftest import EXOS_ENDPOINT, ZIPPER
+
+
+def install_ready_routes(router: respx.Router, status: int = 200) -> None:
+    router.get(f"{ZIPPER}/ready").mock(return_value=httpx.Response(status))
+    router.get(f"{EXOS_ENDPOINT}/ready").mock(return_value=httpx.Response(status))
 
 
 class TestDoctor:
@@ -14,6 +19,7 @@ class TestDoctor:
         from tests.cli.test_keys_cmd import install_keys_routes
 
         platform_mocks.head(ZIPPER).mock(return_value=httpx.Response(200))
+        install_ready_routes(platform_mocks)
         install_keys_routes(platform_mocks)  # the exos probe mints keys on first use
         invoke("auth", "login", "--username", "alice", "--password-stdin", input="pw\n")
         with mock_aws():
@@ -26,10 +32,53 @@ class TestDoctor:
         self, invoke: Invoke, platform_mocks: respx.Router
     ) -> None:
         platform_mocks.head(ZIPPER).mock(side_effect=httpx.ConnectError("refused"))
+        install_ready_routes(platform_mocks)
         result = invoke("doctor")
         assert result.exit_code == 1
         assert "✗" in result.output
         assert "hint" in result.output
+
+    def test_eodata_not_ready_fails_without_retries(
+        self, invoke: Invoke, platform_mocks: respx.Router
+    ) -> None:
+        platform_mocks.head(ZIPPER).mock(return_value=httpx.Response(200))
+        ready = platform_mocks.get(f"{ZIPPER}/ready").mock(return_value=httpx.Response(503))
+        platform_mocks.get(f"{EXOS_ENDPOINT}/ready").mock(return_value=httpx.Response(200))
+        result = invoke("doctor")
+        assert result.exit_code == 1
+        assert "not ready" in result.output
+        # 503 means "not ready", an answer — the transport backoff loop must not kick in
+        assert ready.call_count == 1
+
+    def test_ready_probe_rate_limited_across_runs(
+        self, invoke: Invoke, platform_mocks: respx.Router
+    ) -> None:
+        platform_mocks.head(ZIPPER).mock(return_value=httpx.Response(200))
+        install_ready_routes(platform_mocks)
+        invoke("doctor")
+        invoke("doctor")
+        ready = platform_mocks.get(f"{ZIPPER}/ready")
+        assert ready.call_count == 1  # second run served from the on-disk verdict
+        result = invoke("doctor", "--json")
+        sections = json.loads(result.output)
+        services = next(s for s in sections if s["section"] == "Services")
+        zipper_ready = next(r for r in services["results"] if r["name"] == "Zipper eodata")
+        assert zipper_ready["ok"] is True
+        assert "cached" in zipper_ready["detail"]
+
+    def test_force_probes_live_despite_fresh_cache(
+        self, invoke: Invoke, platform_mocks: respx.Router
+    ) -> None:
+        platform_mocks.head(ZIPPER).mock(return_value=httpx.Response(200))
+        install_ready_routes(platform_mocks)
+        invoke("doctor")
+        result = invoke("doctor", "--force", "--json")
+        ready = platform_mocks.get(f"{ZIPPER}/ready")
+        assert ready.call_count == 2
+        sections = json.loads(result.output)
+        services = next(s for s in sections if s["section"] == "Services")
+        zipper_ready = next(r for r in services["results"] if r["name"] == "Zipper eodata")
+        assert "cached" not in zipper_ready["detail"]  # live verdict, not the stored one
 
     def test_nothing_configured_all_skips_exit_zero(self, invoke_bare: Invoke) -> None:
         result = invoke_bare("doctor")

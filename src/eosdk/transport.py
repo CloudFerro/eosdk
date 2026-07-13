@@ -128,9 +128,12 @@ class Transport:
         *,
         service: str,
         auth: httpx.Auth | None = None,
+        retry: RetryPolicy | None = None,
         **kwargs: Any,
     ) -> httpx.Response:
-        return self._send(method, url, service=service, auth=auth, stream=False, **kwargs)
+        return self._send(
+            method, url, service=service, auth=auth, retry=retry, stream=False, **kwargs
+        )
 
     @contextmanager
     def stream(
@@ -140,9 +143,12 @@ class Transport:
         *,
         service: str,
         auth: httpx.Auth | None = None,
+        retry: RetryPolicy | None = None,
         **kwargs: Any,
     ) -> Iterator[httpx.Response]:
-        response = self._send(method, url, service=service, auth=auth, stream=True, **kwargs)
+        response = self._send(
+            method, url, service=service, auth=auth, retry=retry, stream=True, **kwargs
+        )
         try:
             yield response
         finally:
@@ -156,19 +162,23 @@ class Transport:
         service: str,
         auth: httpx.Auth | None,
         stream: bool,
+        retry: RetryPolicy | None = None,
         **kwargs: Any,
     ) -> httpx.Response:
-        retryable_method = method.upper() in self.retry.retry_methods
+        # per-call override, like timeout: health probes treat 503 as an
+        # answer ("not ready"), not as an invitation to back off and retry
+        policy = self.retry if retry is None else retry
+        retryable_method = method.upper() in policy.retry_methods
         last_status: httpx.Response | None = None
-        for attempt in range(1, self.retry.attempts + 1):
+        for attempt in range(1, policy.attempts + 1):
             try:
                 request = self._client.build_request(method, url, **kwargs)
                 response = self._client.send(
                     request, auth=auth or httpx.USE_CLIENT_DEFAULT, stream=stream
                 )
             except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as exc:
-                if retryable_method and attempt < self.retry.attempts:
-                    self.sleep(self.retry.backoff(attempt))
+                if retryable_method and attempt < policy.attempts:
+                    self.sleep(policy.backoff(attempt))
                     continue
                 raise EndpointUnreachable(
                     service=service,
@@ -176,9 +186,9 @@ class Transport:
                     hint="check the endpoint URL for this service in your profile or EOSDK_* env",
                 ) from exc
 
-            if response.status_code in self.retry.retry_statuses and retryable_method:
+            if response.status_code in policy.retry_statuses and retryable_method:
                 last_status = response
-                if attempt < self.retry.attempts:
+                if attempt < policy.attempts:
                     retry_after = (
                         _retry_after_seconds(response) if response.status_code == 429 else None
                     )
@@ -186,7 +196,7 @@ class Transport:
                         response.close()
                     else:
                         response.read()
-                    self.sleep(max(retry_after or 0.0, self.retry.backoff(attempt)))
+                    self.sleep(max(retry_after or 0.0, policy.backoff(attempt)))
                     continue
             break
 

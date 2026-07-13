@@ -49,6 +49,7 @@ class Client:
         token_cache_dir: Path | None = None,
         keys_cache_dir: Path | None = None,
         discovery_cache_dir: Path | None = None,
+        readiness_cache_dir: Path | None = None,
     ) -> None:
         self.config: ResolvedConfig = load(
             kwargs_endpoints=endpoints,
@@ -64,6 +65,7 @@ class Client:
         self._token_cache_dir = token_cache_dir
         self._keys_cache_dir = keys_cache_dir
         self._discovery_cache_dir = discovery_cache_dir
+        self._readiness_cache_dir = readiness_cache_dir
         self._discovery: DiscoveryResolver | None = None
         self._auth: KeycloakAuth | None = None
         self._stac: StacCatalogue | None = None

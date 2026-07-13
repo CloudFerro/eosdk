@@ -48,5 +48,13 @@ eo keys revoke <access-id> [--yes]
 ```bash
 eo config init|show|set|use|profiles
 eo discover [--refresh] [--json]  # the platform's service discovery document
-eo doctor [--json]                # ✓/✗/- health checks with hints
+eo doctor [--json] [--force]      # ✓/✗/- health checks with hints
 ```
+
+Besides reachability, `eo doctor` asks Zipper and Exos whether the eodata
+store behind them is available (their `/ready` endpoints). These probes are
+rate-limited: the verdict is kept on disk (`~/.config/eosdk/readiness`) and
+reused for 5 minutes, so repeated doctor runs — e.g. as a CI pre-flight —
+don't hammer the services. A reused verdict is marked `[cached …]` in the
+check's detail; `--force` probes live regardless (and restarts the
+5-minute window).

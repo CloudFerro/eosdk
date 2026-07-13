@@ -31,6 +31,7 @@ class CliState:
     token_cache_dir: Path | None = None
     keys_cache_dir: Path | None = None
     discovery_cache_dir: Path | None = None
+    readiness_cache_dir: Path | None = None
 
 
 def get_state(ctx: typer.Context) -> CliState:
@@ -47,6 +48,7 @@ def build_client(state: CliState) -> Client:
         token_cache_dir=state.token_cache_dir,
         keys_cache_dir=state.keys_cache_dir,
         discovery_cache_dir=state.discovery_cache_dir,
+        readiness_cache_dir=state.readiness_cache_dir,
     )
 
 

@@ -289,6 +289,8 @@ to the SDK. Resolution order for the discovery URL itself:
 ```json
 {
   "version": "1.0",
+  "platform":     { "name": "example-eu",
+                    "description": "Example Earth-observation data platform (example.eu)" },
   "services": {
     "catalogue":    { "stac": { "url": "https://catalogue.example.eu/stac" },
                       "odata": { "url": "https://catalogue.example.eu/odata",
@@ -372,6 +374,28 @@ major they cannot parse at the URL they derive, no coordinated client upgrade
 is required, and the document remains static JSON servable from a bucket/CDN
 (which content negotiation via `Accept` headers would break). The cost of
 versioning is paid only if a second major ever exists.
+
+**Platform identity & profile snapshot** — the optional top-level `platform`
+block names the deployment (`name`, free-text `description`). When present,
+the SDK materializes the whole projected online configuration as a config
+profile named after the platform (`profiles.<name>`, name normalized to a
+profile-safe slug) on the first successful document load, marked with
+`discovered_from = <discovery URL>` so its provenance is explicit. The
+snapshot records the bootstrap (`platform` root / `discovery_url`), the
+`description`, and every projected endpoint, giving the user a named,
+inspectable, offline-usable profile without running `eo config init`.
+
+- **Name conflict** — a same-named profile *without* the `discovered_from`
+  marker is user-owned: the SDK never overwrites it. It warns (CLI: printed by
+  `eo discover`; library: a `logging` warning) and skips the save; the user
+  resolves it by renaming/deleting their profile, or simply keeps it — their
+  pins beat discovery anyway.
+- **Online document changes** — a profile *with* the marker is a managed
+  mirror: every re-fetch of the document (TTL expiry, `eo discover
+  --refresh`) resyncs it wholesale, so endpoint changes published by the
+  platform propagate to the profile. Manual edits to a managed profile are
+  therefore overwritten on the next resync — to customize, copy the profile
+  under another name (which drops the marker semantics for the copy).
 
 **Per-service standard discovery** (used with or without the platform document):
 

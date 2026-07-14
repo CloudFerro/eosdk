@@ -47,6 +47,43 @@ class TestParse:
         assert document.services == {}
 
 
+class TestPlatformInfo:
+    def test_spec_example_platform_block(self) -> None:
+        document = parse_document(spec_document())
+        assert document.platform is not None
+        assert document.platform.name == "example-eu"
+        assert document.platform.description == (
+            "Example Earth-observation data platform (example.eu)"
+        )
+        assert document.platform.profile_name == "example-eu"
+
+    def test_platform_block_optional(self) -> None:
+        raw = spec_document()
+        del raw["platform"]
+        assert parse_document(raw).platform is None
+
+    def test_profile_name_is_slugified(self) -> None:
+        raw = spec_document()
+        raw["platform"] = {"name": "  Copernicus Data Space!  "}
+        info = parse_document(raw).platform
+        assert info is not None
+        assert info.description is None
+        assert info.profile_name == "copernicus-data-space"
+
+    def test_unusable_name_yields_no_profile(self) -> None:
+        raw = spec_document()
+        raw["platform"] = {"name": "  ***  "}
+        info = parse_document(raw).platform
+        assert info is not None
+        assert info.profile_name is None
+
+    def test_platform_block_without_name_is_malformed(self) -> None:
+        raw = spec_document()
+        raw["platform"] = {"description": "nameless"}
+        with pytest.raises(DiscoveryError, match="malformed"):
+            parse_document(raw)
+
+
 class TestDeriveUrl:
     def test_well_known_derivation(self) -> None:
         url = derive_discovery_url("https://platform.example.eu/")

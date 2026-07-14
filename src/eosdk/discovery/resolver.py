@@ -19,6 +19,7 @@ from eosdk.discovery.models import (
 from eosdk.eodata.capabilities import BUILTIN_MATRIX
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from eosdk.discovery.models import DiscoveryDocument
@@ -34,12 +35,14 @@ class DiscoveryResolver:
         discovery_url: str | None,
         transport: Transport,
         cache_dir: Path | None = None,
+        on_document: Callable[[DiscoveryDocument], None] | None = None,
     ) -> None:
         self._platform = platform
         self._discovery_url = discovery_url
         self._transport = transport
         self._cache = DiscoveryCache(cache_dir)
         self._document: DiscoveryDocument | None = None
+        self._on_document = on_document
 
     @property
     def configured(self) -> bool:
@@ -56,6 +59,8 @@ class DiscoveryResolver:
             url = self.url
             assert url is not None, "discovery is not configured (no platform root)"
             self._document = fetch_document(url, self._cache, self._transport, refresh=refresh)
+            if self._on_document is not None:
+                self._on_document(self._document)
         return self._document
 
     def services(self) -> dict[str, Any]:

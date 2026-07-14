@@ -97,6 +97,40 @@ def set_default_profile(path: Path, name: str) -> None:
     _write_document(path, document)
 
 
+def save_discovered_profile(
+    path: Path,
+    name: str,
+    *,
+    values: dict[str, str],
+    discovered_from: str,
+) -> str:
+    """Persist a discovery snapshot as ``profiles.<name>`` (SPEC §6.2).
+
+    Returns ``"created"``, ``"updated"``, ``"unchanged"`` or ``"conflict"``.
+    A same-named profile carrying ``discovered_from`` is a managed mirror and
+    is resynced wholesale; one without the marker is user-owned and reported
+    as a conflict instead of being overwritten.
+    """
+    payload = dict(values)
+    payload["discovered_from"] = discovered_from
+    validated = {field: _validate_field(field, value) for field, value in payload.items()}
+    document = _read_document(path)
+    profiles = document.setdefault("profiles", tomlkit.table(is_super_table=True))
+    existing = profiles.get(name)
+    if existing is not None and "discovered_from" not in existing:
+        return "conflict"
+    if existing is not None and {key: existing[key] for key in existing} == validated:
+        return "unchanged"
+    table = tomlkit.table()
+    for field, value in validated.items():
+        table[field] = value
+    profiles[name] = table
+    if "default_profile" not in document:
+        document["default_profile"] = name
+    _write_document(path, document)
+    return "created" if existing is None else "updated"
+
+
 def init_profile(
     path: Path,
     profile_name: str,

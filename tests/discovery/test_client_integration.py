@@ -111,6 +111,99 @@ class TestSingleRootBootstrap:
         assert route.call_count == 2
 
 
+class TestPlatformSnapshot:
+    """The platform-named profile written from the discovery document (SPEC §6.2)."""
+
+    @respx.mock
+    def test_first_use_saves_platform_profile(self, tmp_path: Path) -> None:
+        from eosdk.config.loader import _load_config_file
+
+        mock_platform()
+        user_config = tmp_path / "config.toml"
+        with Client(
+            platform=PLATFORM,
+            cwd=tmp_path,
+            user_config=user_config,
+            discovery_cache_dir=tmp_path / "discovery",
+        ) as client:
+            client._endpoint("keycloak", service="keycloak")
+            assert client.discovered_profile == ("example-eu", "created")
+        profile = _load_config_file(user_config).profiles["example-eu"]
+        assert profile.platform == PLATFORM
+        assert profile.discovered_from == WELL_KNOWN
+        assert profile.description == "Example Earth-observation data platform (example.eu)"
+        assert profile.zipper == "https://zipper.example.eu/odata"
+        assert profile.keycloak == "https://auth.example.eu"
+
+    @respx.mock
+    def test_document_without_platform_block_saves_nothing(self, tmp_path: Path) -> None:
+        document = spec_document()
+        del document["platform"]
+        mock_platform(document)
+        user_config = tmp_path / "config.toml"
+        with Client(
+            platform=PLATFORM,
+            cwd=tmp_path,
+            user_config=user_config,
+            discovery_cache_dir=tmp_path / "discovery",
+        ) as client:
+            client._endpoint("keycloak", service="keycloak")
+            assert client.discovered_profile is None
+        assert not user_config.exists()
+
+    @respx.mock
+    def test_user_owned_profile_conflict_left_untouched(self, tmp_path: Path) -> None:
+        mock_platform()
+        user_config = tmp_path / "config.toml"
+        original = '[profiles.example-eu]\nzipper = "https://my-canary.example.eu"\n'
+        user_config.write_text(original)
+        with Client(
+            platform=PLATFORM,
+            cwd=tmp_path,
+            user_config=user_config,
+            discovery_cache_dir=tmp_path / "discovery",
+        ) as client:
+            client.discovery.document()
+            assert client.discovered_profile == ("example-eu", "conflict")
+        assert user_config.read_text() == original
+
+    @respx.mock
+    def test_online_change_resyncs_managed_profile_on_refresh(self, tmp_path: Path) -> None:
+        from eosdk.config.loader import _load_config_file
+
+        route = mock_platform()
+        user_config = tmp_path / "config.toml"
+        with Client(
+            platform=PLATFORM,
+            cwd=tmp_path,
+            user_config=user_config,
+            discovery_cache_dir=tmp_path / "discovery",
+        ) as client:
+            client.discovery.document()
+            assert client.discovered_profile == ("example-eu", "created")
+            changed = spec_document()
+            changed["services"]["keys_manager"]["url"] = "https://keys-v2.example.eu/api"
+            route.mock(return_value=httpx.Response(200, json=changed))
+            client.discovery.refresh()
+            assert client.discovered_profile == ("example-eu", "updated")
+        profile = _load_config_file(user_config).profiles["example-eu"]
+        assert profile.keys_manager == "https://keys-v2.example.eu/api"
+
+    @respx.mock
+    def test_persistence_failure_does_not_break_the_call(self, tmp_path: Path) -> None:
+        mock_platform()
+        blocked = tmp_path / "not-a-dir"
+        blocked.write_text("")  # config parent path exists as a *file*
+        with Client(
+            platform=PLATFORM,
+            cwd=tmp_path,
+            user_config=blocked / "config.toml",
+            discovery_cache_dir=tmp_path / "discovery",
+        ) as client:
+            assert client._endpoint("keycloak", service="keycloak")
+            assert client.discovered_profile is None
+
+
 class TestVersionGuard:
     @respx.mock
     def test_advertised_v3_fails_before_any_zipper_call(self, client: Client) -> None:

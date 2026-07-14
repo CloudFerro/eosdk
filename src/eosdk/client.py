@@ -9,6 +9,7 @@ config or environment (SPEC §4.2).
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 from eosdk.config import load
@@ -27,12 +28,15 @@ if TYPE_CHECKING:
     from eosdk.catalogue.odata import ODataCatalogue
     from eosdk.catalogue.stac import StacCatalogue
     from eosdk.config import ResolvedConfig
+    from eosdk.discovery.models import DiscoveryDocument
     from eosdk.discovery.resolver import DiscoveryResolver
     from eosdk.eodata.base import DownloadReport, ProgressEvent
     from eosdk.eodata.capabilities import Capability
     from eosdk.eodata.exos import ExosDownloader
     from eosdk.eodata.zipper import ZipperDownloader
     from eosdk.models import Collection, Node, Product, Queryable, SearchResult
+
+logger = logging.getLogger(__name__)
 
 
 class Client:
@@ -62,10 +66,13 @@ class Client:
             timeout=timeout,
             verify=self.config.verify_tls if verify is None else verify,
         )
+        self._user_config = user_config
         self._token_cache_dir = token_cache_dir
         self._keys_cache_dir = keys_cache_dir
         self._discovery_cache_dir = discovery_cache_dir
         self._readiness_cache_dir = readiness_cache_dir
+        # (profile name, status) of the last discovery snapshot save, if any
+        self.discovered_profile: tuple[str, str] | None = None
         self._discovery: DiscoveryResolver | None = None
         self._auth: KeycloakAuth | None = None
         self._stac: StacCatalogue | None = None
@@ -86,8 +93,59 @@ class Client:
                 discovery_url=self.config.endpoints.discovery_url,
                 transport=self._transport,
                 cache_dir=self._discovery_cache_dir,
+                on_document=self._snapshot_discovered_profile,
             )
         return self._discovery
+
+    def _snapshot_discovered_profile(self, document: DiscoveryDocument) -> None:
+        """Save the online configuration as a profile named after the platform.
+
+        Runs on every document load, so a changed online document resyncs the
+        managed profile; a same-named user-owned profile is never overwritten.
+        Persistence failures must not break the API call that triggered
+        discovery — they are logged and swallowed.
+        """
+        from eosdk.config.loader import user_config_path
+        from eosdk.config.profiles import save_discovered_profile
+        from eosdk.discovery.models import project_endpoints
+
+        info = document.platform
+        name = info.profile_name if info is not None else None
+        if info is None or name is None:
+            return
+        values = dict(project_endpoints(document))
+        if self.config.platform:
+            values["platform"] = self.config.platform
+        if self.config.endpoints.discovery_url:
+            values["discovery_url"] = self.config.endpoints.discovery_url
+        if info.description:
+            values["description"] = info.description
+        path = self._user_config or user_config_path()
+        try:
+            status = save_discovered_profile(
+                path, name, values=values, discovered_from=self.discovery.url or ""
+            )
+        except Exception as exc:
+            logger.warning("could not save discovered profile %r to %s: %s", name, path, exc)
+            return
+        self.discovered_profile = (name, status)
+        if status == "conflict":
+            logger.warning(
+                "profile %r in %s already exists and was not created from discovery; "
+                "leaving it untouched — rename or delete it to let eosdk save the "
+                "%s platform snapshot under that name",
+                name,
+                path,
+                info.name,
+            )
+        elif status in {"created", "updated"}:
+            logger.info(
+                "%s profile %r in %s from the %s discovery document",
+                status,
+                name,
+                path,
+                info.name,
+            )
 
     def _endpoint(self, fieldname: str, *, service: str) -> str:
         """Resolve an endpoint, triggering lazy discovery for <pending> fields."""

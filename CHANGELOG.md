@@ -3,6 +3,12 @@
 ## Unreleased (Phase 4 — hardening)
 
 ### Added
+- Discovery document `platform` block (optional): `name` + `description`
+  identify the deployment. On document load the SDK saves the whole projected
+  online configuration as a profile named after the platform, marked
+  `discovered_from = <discovery URL>`. Marked profiles are managed mirrors and
+  resync on every re-fetch (TTL expiry, `eo discover --refresh`); a same-named
+  unmarked profile is user-owned — the SDK warns and leaves it untouched.
 - `CollectionNotFound`: a STAC search whose first page comes back empty now
   probes `GET /collections/{id}` (one extra request, failure path only) to
   distinguish "no products matched" from "no such collection" — STAC servers

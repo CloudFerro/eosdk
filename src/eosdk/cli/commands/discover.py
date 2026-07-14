@@ -32,6 +32,11 @@ def discover(
             print(json.dumps(document.model_dump(), indent=2, default=str))
             return
         stdout.print(f"discovery document [bold]{client.discovery.url}[/bold]")
+        if document.platform is not None:
+            line = f"platform: [bold]{document.platform.name}[/bold]"
+            if document.platform.description:
+                line += f" — {document.platform.description}"
+            stdout.print(line)
         stdout.print(f"schema version: {document.version}")
         table = Table()
         table.add_column("service")
@@ -65,3 +70,15 @@ def discover(
                 url = service.get("url") or service.get("endpoint") or service.get("issuer", "")
                 table.add_row(service_name, "-", str(url), "-", "-", "[green]ok[/green]")
         stdout.print(table)
+        if client.discovered_profile is not None:
+            name, status = client.discovered_profile
+            if status == "conflict":
+                stdout.print(
+                    f"[yellow]profile '{name}' already exists and is not discovery-managed; "
+                    "platform snapshot not saved — rename or delete that profile to let "
+                    "eosdk manage it[/yellow]"
+                )
+            elif status in {"created", "updated"}:
+                stdout.print(
+                    f"platform configuration saved as profile [bold]{name}[/bold] ({status})"
+                )

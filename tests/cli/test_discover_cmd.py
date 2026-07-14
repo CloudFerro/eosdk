@@ -34,6 +34,21 @@ class TestDiscover:
         assert "resto" in result.output
         assert "deprecated" in result.output
         assert "2027-01-01" in result.output
+        assert "platform: example-eu" in result.output
+        assert "saved as profile example-eu (created)" in result.output
+
+    @respx.mock
+    def test_conflicting_user_profile_reported(self, tmp_path: Path) -> None:
+        respx.get(WELL_KNOWN).mock(return_value=httpx.Response(200, json=spec_document()))
+        state = platform_state(tmp_path)
+        config = tmp_path / "config.toml"
+        config.write_text(
+            config.read_text() + '[profiles.example-eu]\nzipper = "https://mine.example.eu"\n'
+        )
+        result = CliRunner().invoke(app, ["discover"], obj=state)
+        assert result.exit_code == 0, result.output
+        assert "not discovery-managed" in result.output
+        assert 'zipper = "https://mine.example.eu"' in config.read_text()
 
     @respx.mock
     def test_json_output(self, tmp_path: Path) -> None:

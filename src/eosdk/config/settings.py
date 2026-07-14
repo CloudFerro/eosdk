@@ -62,11 +62,19 @@ URL_FIELDS = frozenset(
 
 
 class Profile(BaseModel):
-    """A named endpoint set in the config file; any subset may be pinned."""
+    """A named endpoint set in the config file; any subset may be pinned.
+
+    ``discovered_from`` marks a profile the SDK materialized from a platform
+    discovery document (SPEC §6.2): it holds the discovery URL, and its
+    presence is what allows the SDK to resync the profile on re-fetch.
+    Profiles without it are user-owned and never touched.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     platform: str | None = None
+    description: str | None = None
+    discovered_from: str | None = None
     catalogue_stac: str | None = None
     catalogue_odata: str | None = None
     zipper: str | None = None

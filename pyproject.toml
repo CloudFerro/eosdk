@@ -8,11 +8,12 @@ version = "0.1.0.dev0"
 description = "Python SDK and CLI for Earth Observation services: catalogue search, EOData download, auth"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "Proprietary" } # TODO(SPEC §14.8): license decision pending
+license = { text = "Apache-2.0" }
 authors = [{ name = "CloudFerro" }]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",

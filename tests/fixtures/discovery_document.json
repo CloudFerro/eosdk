@@ -1,5 +1,9 @@
 {
   "version": "1.0",
+  "platform": {
+    "name": "example-eu",
+    "description": "Example Earth-observation data platform (example.eu)"
+  },
   "services": {
     "catalogue": {
       "stac": { "url": "https://catalogue.example.eu/stac" },

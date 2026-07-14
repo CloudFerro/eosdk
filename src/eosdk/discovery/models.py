@@ -8,6 +8,7 @@ Unknown service or strategy keys are ignored (forward compatibility).
 from __future__ import annotations
 
 import datetime as dt
+import re
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -17,9 +18,30 @@ from eosdk.exceptions import ConfigError
 
 SUPPORTED_SCHEMA_MAJOR = 1
 
+_PROFILE_UNSAFE = re.compile(r"[^a-z0-9._-]+")
+
 
 class DiscoveryError(ConfigError):
     """The discovery document is unusable (bad schema version, malformed)."""
+
+
+class PlatformInfo(BaseModel):
+    """Top-level platform identity block (optional, SPEC §6.2).
+
+    ``name`` doubles as the config-profile name the SDK snapshots the
+    discovered configuration under; :attr:`profile_name` normalizes it.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: str
+    description: str | None = None
+
+    @property
+    def profile_name(self) -> str | None:
+        """The platform name as a profile-safe slug; None when nothing survives."""
+        slug = _PROFILE_UNSAFE.sub("-", self.name.strip().lower()).strip("-._")
+        return slug or None
 
 
 class StrategyInfo(BaseModel):
@@ -37,6 +59,7 @@ class DiscoveryDocument(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     version: str
+    platform: PlatformInfo | None = None
     services: dict[str, dict[str, Any]] = {}
 
 

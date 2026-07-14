@@ -90,11 +90,23 @@ def test_open_via_http_is_unsupported_capability(client: Client) -> None:
 
 
 def test_unknown_via_rejected(client: Client) -> None:
-    from eosdk.exceptions import UnsupportedCapability
+    from eosdk.exceptions import ConfigError
     from eosdk.models import Product
 
-    with pytest.raises(UnsupportedCapability, match="ftp"):
+    with pytest.raises(ConfigError, match="ftp") as exc_info:
         client.download(Product(id="x", name="X"), target=".", via="ftp")
+    assert "http" in str(exc_info.value)
+    assert "s3" in str(exc_info.value)
+
+
+def test_old_via_names_rejected_with_hint(client: Client) -> None:
+    """The pre-rename backend names must fail as unknown, pointing at http | s3."""
+    from eosdk.exceptions import ConfigError
+    from eosdk.models import Product
+
+    for legacy in ("zipper", "exos"):
+        with pytest.raises(ConfigError, match=f"unknown download backend '{legacy}'"):
+            client.download(Product(id="x", name="X"), target=".", via=legacy)
 
 
 def test_odata_protocol_requires_endpoint(client: Client) -> None:

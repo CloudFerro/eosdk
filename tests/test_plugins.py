@@ -102,7 +102,8 @@ class TestClientDispatch:
             client.open(Product(id="x", name="X"), path="a/b", via="dummy")
 
     def test_unknown_via_still_rejected(self, client: Client) -> None:
+        from eosdk.exceptions import ConfigError
         from eosdk.models import Product
 
-        with pytest.raises(UnsupportedCapability):
+        with pytest.raises(ConfigError, match="unknown download backend"):
             client.download(Product(id="x", name="X"), target=".", via="nope")

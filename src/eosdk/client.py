@@ -13,7 +13,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from eosdk.config import load
-from eosdk.exceptions import ConfigError, UnsupportedCapability
+from eosdk.exceptions import ConfigError
 from eosdk.models import Query
 from eosdk.transport import Transport
 
@@ -275,7 +275,7 @@ class Client:
                 if plugin.strategies:
                     select_strategy(via, capability, plugin.strategies)
                 return plugin.factory(self)
-            raise UnsupportedCapability(backend=via, capability=capability.value)
+            raise ConfigError(f"unknown download backend {via!r}", hint="use http or s3")
         strategies = (
             self.discovery.strategies_for(via) if self.discovery.configured else BUILTIN_MATRIX[via]
         )

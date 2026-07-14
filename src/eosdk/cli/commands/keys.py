@@ -1,8 +1,9 @@
 """``eo keys`` — S3 key lifecycle (SPEC §6.4).
 
-Secrets are masked everywhere except the explicit ``--export`` opt-in, which
-emits ``AWS_*`` assignment lines for interop with aws-cli / rclone:
-``eval "$(eo keys create --export)"``.
+Access ids are public identifiers and printed in full (``revoke`` takes one as
+argument). Secrets are never printed except via the explicit ``--export``
+opt-in, which emits ``AWS_*`` assignment lines for interop with aws-cli /
+rclone: ``eval "$(eo keys create --export)"``.
 """
 
 from __future__ import annotations
@@ -16,12 +17,6 @@ from rich.table import Table
 from eosdk.cli._state import build_client, friendly_errors, get_state, stdout
 
 keys_app = typer.Typer(no_args_is_help=True)
-
-
-def _mask(value: str | None) -> str:
-    if not value:
-        return "-"
-    return f"****{value[-4:]}" if len(value) > 4 else "****"
 
 
 @keys_app.command()
@@ -46,9 +41,7 @@ def create(
                 print(f"AWS_ENDPOINT_URL={endpoint}")
             return
         expires = credentials.expiration_date or "-"
-        stdout.print(
-            f"created key [bold]{_mask(credentials.access_key)}[/bold] (expires {expires})"
-        )
+        stdout.print(f"created key [bold]{credentials.access_key}[/bold] (expires {expires})")
         stdout.print("use [bold]--export[/bold] to print credentials for aws/rclone")
 
 
@@ -69,6 +62,8 @@ def list_(
                             "access_id": e.access_key,
                             "organization": e.organization,
                             "expiration_date": e.expiration_date,
+                            "label": e.label,
+                            "local_secret": e.label is not None,
                         }
                         for e in entries
                     ],
@@ -76,13 +71,17 @@ def list_(
                 )
             )
             return
-        table = Table(title="S3 keys")
+        table = Table(title="S3 keys", caption="local secret: created by eosdk, secret on disk")
         table.add_column("access key")
         table.add_column("organization")
         table.add_column("expires")
+        table.add_column("local secret")
         for entry in entries:
             table.add_row(
-                _mask(entry.access_key), entry.organization or "-", entry.expiration_date or "-"
+                entry.access_key,
+                entry.organization or "-",
+                entry.expiration_date or "-",
+                f"✓ {entry.label}" if entry.label else "-",
             )
         stdout.print(table)
 

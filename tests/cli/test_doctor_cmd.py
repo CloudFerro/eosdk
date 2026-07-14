@@ -87,9 +87,7 @@ class TestDoctor:
         odata = "https://odata.example.eu"
         monkeypatch.setenv("EOSDK_CATALOGUE_ODATA_URL", odata)
         install_ready_routes(platform_mocks)
-        platform_mocks.get(f"{odata}/odata/v1/Products").mock(
-            return_value=httpx.Response(404)
-        )
+        platform_mocks.get(f"{odata}/odata/v1/Products").mock(return_value=httpx.Response(404))
         result = invoke("doctor", "--json")
         sections = json.loads(result.output)
         services = next(s for s in sections if s["section"] == "Services")
@@ -112,6 +110,34 @@ class TestDoctor:
         services = next(s for s in sections if s["section"] == "Services")
         check = next(r for r in services["results"] if r["name"] == "OData catalogue")
         assert check["ok"] is True
+
+    def test_exos_rejected_key_hints_keys_manager_not_endpoint(
+        self, invoke: Invoke, platform_mocks: respx.Router, monkeypatch
+    ) -> None:
+        """InvalidAccessKeyId is a credentials problem (e.g. too many keys in the
+        keys manager) — the hint must point there, not at the endpoint."""
+        from botocore.exceptions import ClientError
+
+        from eosdk.eodata.exos import ExosDownloader
+
+        platform_mocks.head(ZIPPER).mock(return_value=httpx.Response(200))
+        install_ready_routes(platform_mocks)
+
+        def reject(self: ExosDownloader) -> None:
+            raise ClientError(
+                {"Error": {"Code": "InvalidAccessKeyId", "Message": "Unknown"}}, "ListBuckets"
+            )
+
+        monkeypatch.setattr(ExosDownloader, "_s3", reject)
+        result = invoke("doctor", "--json")
+        sections = json.loads(result.output)
+        services = next(s for s in sections if s["section"] == "Services")
+        check = next(r for r in services["results"] if r["name"] == "Exos (S3)")
+        assert check["ok"] is False
+        assert "InvalidAccessKeyId" in check["detail"]
+        assert "eo keys" in check["hint"]
+        assert "exos_endpoint" not in check["hint"]
+        assert result.exit_code == 1
 
     def test_nothing_configured_all_skips_exit_zero(self, invoke_bare: Invoke) -> None:
         result = invoke_bare("doctor")

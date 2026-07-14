@@ -136,6 +136,13 @@ class _SecretStore:
         entries[label] = {"access_id": access_id, "secret_key": secret}
         self.save(entries)
 
+    def labels_by_access_id(self) -> dict[str, str]:
+        return {
+            entry["access_id"]: label
+            for label, entry in self.load().items()
+            if entry.get("access_id")
+        }
+
     def drop_key(self, access_id: str) -> None:
         entries = {
             label: entry
@@ -201,7 +208,13 @@ class S3KeysProvider:
         return credentials
 
     def list(self) -> list[S3Credentials]:
-        """All key pairs (paginated server-side; secrets are never included)."""
+        """All key pairs (paginated server-side; secrets are never included).
+
+        Keys created here with a label carry it back on the listing entry
+        (``label is not None`` means the secret sits in the local store); keys
+        created elsewhere have ``label=None`` — their secrets are unrecoverable.
+        """
+        labels = self._store.labels_by_access_id()
         entries: list[S3Credentials] = []
         offset = 0
         while True:
@@ -213,6 +226,7 @@ class S3KeysProvider:
                     secret_key=None,
                     expiration_date=entry.get("expiration_date"),
                     organization=entry.get("organization"),
+                    label=labels.get(str(entry["access_id"])),
                 )
                 for entry in page
             )

@@ -25,6 +25,12 @@ _VERSION_SEGMENT = re.compile(r"/v\d+/?$")
 # verbatim (the SDK never appends /vN to it) — and CDSE's landing page
 # itself lives under /v1, so a version segment there is not a mistake.
 _VERSION_CHECK_EXEMPT = frozenset({"catalogue_stac"})
+# S3 error codes that indicate the managed key itself is bad — e.g. a key the
+# keys manager still lists but the S3 endpoint never provisioned (seen when an
+# account holds too many keys). The endpoint hint would misdirect here.
+_S3_CREDENTIAL_ERRORS = frozenset(
+    {"InvalidAccessKeyId", "SignatureDoesNotMatch", "AccessDenied", "ExpiredToken"}
+)
 
 
 @dataclass(frozen=True)
@@ -33,6 +39,14 @@ class CheckResult:
     ok: bool | None  # None -> skipped
     detail: str
     hint: str | None = None
+
+
+class _ProbeFailure(EosdkError):
+    """A probe failure that diagnosed its own cause; its hint beats the generic one."""
+
+    def __init__(self, message: str, *, hint: str) -> None:
+        self.hint = hint
+        super().__init__(message)
 
 
 @dataclass
@@ -53,7 +67,7 @@ def _probe(name: str, action: Callable[[], str], hint: str | None = None) -> Che
     try:
         return CheckResult(name, True, action())
     except EosdkError as exc:
-        return CheckResult(name, False, str(exc), hint)
+        return CheckResult(name, False, str(exc), getattr(exc, "hint", None) or hint)
     except Exception as exc:  # a doctor check must never crash the run
         return CheckResult(name, False, f"{type(exc).__name__}: {exc}", hint)
 
@@ -161,7 +175,21 @@ def _services_section(client: Client, *, force_ready: bool = False) -> Section:
         return f"Products endpoint HTTP {response.status_code}"
 
     def exos() -> str:
-        client._exos_downloader()._s3().list_buckets()
+        try:
+            client._exos_downloader()._s3().list_buckets()
+        except Exception as exc:
+            code = getattr(exc, "response", None)
+            code = code.get("Error", {}).get("Code", "") if isinstance(code, dict) else ""
+            if code in _S3_CREDENTIAL_ERRORS:
+                raise _ProbeFailure(
+                    f"S3 rejected the SDK's managed key ({code})",
+                    hint=(
+                        "this is a credentials problem, not an endpoint problem — it often "
+                        "means the account holds too many keys in the keys manager; revoke "
+                        "unused ones (`eo keys list`, `eo keys revoke <access-id>`) and retry"
+                    ),
+                ) from exc
+            raise
         return "S3 endpoint reachable with managed keys"
 
     ready_hint = (

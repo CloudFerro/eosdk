@@ -33,10 +33,19 @@
   pre-1.0 checklist (license decision and platform credentials still open).
 
 ### Fixed
+- `eo keys list` / `eo keys create` no longer mask the access key id: it is a
+  public identifier and the argument `eo keys revoke` needs, so masking made
+  revocation impossible from the listing. Secrets remain private (`SecretStr`)
+  and are only ever printed via the explicit `eo keys create --export` opt-in.
 - README quickstart examples used OData mission names (`SENTINEL-1`,
   `SENTINEL-2`) with the default STAC protocol, which silently returned zero
   products; they now use STAC collection ids (`sentinel-1-grd`,
   `sentinel-2-l2a`) and note the vocabulary split.
+- `eo doctor`: when the Exos S3 probe fails with a credential-shaped error
+  (`InvalidAccessKeyId`, `SignatureDoesNotMatch`, `AccessDenied`,
+  `ExpiredToken`), the hint now points at the managed key / keys manager
+  (e.g. too many keys on the account — prune with `eo keys list` /
+  `eo keys revoke`) instead of misdirecting to the `exos_endpoint` URL.
 
 
 ## 0.3.0 (Phase 3 — platform)

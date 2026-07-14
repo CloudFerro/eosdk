@@ -54,20 +54,20 @@ def test_auth_error_names_realm_and_profile() -> None:
 
 def test_endpoint_unreachable_names_service_url_hint() -> None:
     err = EndpointUnreachable(
-        service="zipper", url="https://z.example.eu", hint="check EOSDK_ZIPPER_URL"
+        service="eodata_http", url="https://z.example.eu", hint="check EOSDK_EODATA_HTTP_URL"
     )
     msg = str(err)
-    assert "zipper" in msg
+    assert "eodata_http" in msg
     assert "https://z.example.eu" in msg
-    assert "EOSDK_ZIPPER_URL" in msg
+    assert "EOSDK_EODATA_HTTP_URL" in msg
 
 
 def test_unsupported_api_version_message() -> None:
     err = UnsupportedApiVersion(
-        service="zipper",
+        service="eodata_http",
         advertised="v3",
         supported="v1-v2",
-        remediation="upgrade eosdk or pin EOSDK_ZIPPER_URL",
+        remediation="upgrade eosdk or pin EOSDK_EODATA_HTTP_URL",
     )
     msg = str(err)
     assert "v3" in msg
@@ -82,10 +82,10 @@ def test_unsupported_query_feature_names_backend() -> None:
 
 
 def test_unsupported_capability_names_alternative() -> None:
-    err = UnsupportedCapability(backend="zipper", capability="open", alternative="use via='exos'")
-    assert "zipper" in str(err)
+    err = UnsupportedCapability(backend="http", capability="open", alternative="use via='s3'")
+    assert "http" in str(err)
     assert "open" in str(err)
-    assert "exos" in str(err)
+    assert "s3" in str(err)
 
 
 def test_collection_not_found_lists_suggestions_and_hint() -> None:
@@ -110,14 +110,14 @@ def test_product_not_found() -> None:
 
 def test_download_error_carries_cause() -> None:
     cause = OSError("boom")
-    err = DownloadError("transfer failed", product_id="S2B_X", backend="zipper", cause=cause)
+    err = DownloadError("transfer failed", product_id="S2B_X", backend="http", cause=cause)
     assert err.cause is cause
     assert "S2B_X" in str(err)
     assert "boom" in str(err)
 
 
 def test_quota_exceeded_retry_after() -> None:
-    err = QuotaExceeded(service="zipper", retry_after=30.0)
+    err = QuotaExceeded(service="eodata_http", retry_after=30.0)
     assert "429" in str(err)
     assert "30" in str(err)
 
@@ -131,5 +131,5 @@ def test_s3_key_limit_names_remediation() -> None:
 
 
 def test_config_error_hint() -> None:
-    err = ConfigError("zipper endpoint is not configured", hint="set EOSDK_ZIPPER_URL")
-    assert "EOSDK_ZIPPER_URL" in str(err)
+    err = ConfigError("eodata_http endpoint is not configured", hint="set EOSDK_EODATA_HTTP_URL")
+    assert "EOSDK_EODATA_HTTP_URL" in str(err)

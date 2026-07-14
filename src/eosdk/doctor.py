@@ -26,8 +26,8 @@ _VERSION_SEGMENT = re.compile(r"/v\d+/?$")
 # itself lives under /v1, so a version segment there is not a mistake.
 _VERSION_CHECK_EXEMPT = frozenset({"catalogue_stac"})
 # S3 error codes that indicate the managed key itself is bad — e.g. a key the
-# keys manager still lists but the S3 endpoint never provisioned (seen when an
-# account holds too many keys). The endpoint hint would misdirect here.
+# credentials service still lists but the S3 endpoint never provisioned (seen
+# when an account holds too many keys). The endpoint hint would misdirect here.
 _S3_CREDENTIAL_ERRORS = frozenset(
     {"InvalidAccessKeyId", "SignatureDoesNotMatch", "AccessDenied", "ExpiredToken"}
 )
@@ -174,9 +174,9 @@ def _services_section(client: Client, *, force_ready: bool = False) -> Section:
             raise EosdkError(f"Products endpoint returned HTTP {response.status_code}")
         return f"Products endpoint HTTP {response.status_code}"
 
-    def exos() -> str:
+    def s3_credentials() -> str:
         try:
-            client._exos_downloader()._s3().list_buckets()
+            client._s3_downloader()._s3().list_buckets()
         except Exception as exc:
             code = getattr(exc, "response", None)
             code = code.get("Error", {}).get("Code", "") if isinstance(code, dict) else ""
@@ -185,8 +185,9 @@ def _services_section(client: Client, *, force_ready: bool = False) -> Section:
                     f"S3 rejected the SDK's managed key ({code})",
                     hint=(
                         "this is a credentials problem, not an endpoint problem — it often "
-                        "means the account holds too many keys in the keys manager; revoke "
-                        "unused ones (`eo keys list`, `eo keys revoke <access-id>`) and retry"
+                        "means the account holds too many keys in the credentials service; "
+                        "revoke unused ones (`eo keys list`, `eo keys revoke <access-id>`) "
+                        "and retry"
                     ),
                 ) from exc
             raise
@@ -197,11 +198,11 @@ def _services_section(client: Client, *, force_ready: bool = False) -> Section:
         "this is service-side, not a config problem; probes are rate-limited, retry later"
     )
     for fieldname, name, probe, hint in (
-        ("catalogue_stac", "STAC catalogue", stac, None),
-        ("catalogue_odata", "OData catalogue", odata, None),
-        ("zipper", "Zipper eodata", eodata_ready("zipper"), ready_hint),
-        ("exos_endpoint", "Exos (S3)", exos, None),
-        ("exos_endpoint", "Exos eodata", eodata_ready("exos_endpoint"), ready_hint),
+        ("catalogue_stac", "Catalogue (STAC)", stac, None),
+        ("catalogue_odata", "Catalogue (OData)", odata, None),
+        ("eodata_http", "EOData (HTTP)", eodata_ready("eodata_http"), ready_hint),
+        ("s3_endpoint", "S3 credentials", s3_credentials, None),
+        ("s3_endpoint", "EOData (S3)", eodata_ready("s3_endpoint"), ready_hint),
     ):
         try:
             client.config.require(fieldname, service=fieldname)

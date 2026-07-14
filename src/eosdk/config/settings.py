@@ -38,10 +38,10 @@ class Endpoints(BaseModel):
 
     catalogue_stac: str | None = None
     catalogue_odata: str | None = None
-    zipper: str | None = None
-    exos_endpoint: str | None = None
-    exos_region: str = "default"
-    keys_manager: str | None = None
+    eodata_http: str | None = None
+    s3_endpoint: str | None = None
+    s3_region: str = "default"
+    s3_credentials: str | None = None
     keycloak: str | None = None
     keycloak_realm: str = "CDSE"
     keycloak_client_id: str = "cdse-public"
@@ -52,9 +52,9 @@ URL_FIELDS = frozenset(
     {
         "catalogue_stac",
         "catalogue_odata",
-        "zipper",
-        "exos_endpoint",
-        "keys_manager",
+        "eodata_http",
+        "s3_endpoint",
+        "s3_credentials",
         "keycloak",
         "discovery_url",
     }
@@ -77,10 +77,10 @@ class Profile(BaseModel):
     discovered_from: str | None = None
     catalogue_stac: str | None = None
     catalogue_odata: str | None = None
-    zipper: str | None = None
-    exos_endpoint: str | None = None
-    exos_region: str | None = None
-    keys_manager: str | None = None
+    eodata_http: str | None = None
+    s3_endpoint: str | None = None
+    s3_region: str | None = None
+    s3_credentials: str | None = None
     keycloak: str | None = None
     keycloak_realm: str | None = None
     keycloak_client_id: str | None = None

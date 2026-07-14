@@ -1,4 +1,4 @@
-"""Zipper Listable via the Nodes hierarchy, incl. the cross-backend parity test."""
+"""HTTP Listable via the Nodes hierarchy, incl. the cross-backend parity test."""
 
 from collections.abc import Iterator
 from typing import Any
@@ -8,11 +8,11 @@ import httpx
 import pytest
 import respx
 
-from eosdk.eodata.zipper import ZipperDownloader
+from eosdk.eodata.http import HttpDownloader
 from eosdk.models import Product
 from eosdk.transport import RetryPolicy, Transport
 from tests.eodata import safe_tree
-from tests.eodata.test_zipper import BASE, FakeAuth
+from tests.eodata.test_http import BASE, FakeAuth
 
 PRODUCT = Product(id="uuid-safe", name=safe_tree.PRODUCT_NAME)
 
@@ -66,14 +66,14 @@ def install_nodes_routes(router: respx.Router) -> dict[str, respx.Route]:
 
 
 @pytest.fixture
-def downloader() -> Iterator[ZipperDownloader]:
+def downloader() -> Iterator[HttpDownloader]:
     with Transport(retry=RetryPolicy(jitter=False), sleep=lambda _: None) as transport:
-        yield ZipperDownloader(BASE, transport=transport, auth=FakeAuth())
+        yield HttpDownloader(BASE, transport=transport, auth=FakeAuth())
 
 
 class TestSingleLevel:
     @respx.mock
-    def test_root_children_one_request(self, downloader: ZipperDownloader) -> None:
+    def test_root_children_one_request(self, downloader: HttpDownloader) -> None:
         routes = install_nodes_routes(respx.mock)
         nodes = downloader.list(PRODUCT)
         assert sorted(n.path for n in nodes) == sorted(safe_tree.ROOT_CHILDREN)
@@ -81,7 +81,7 @@ class TestSingleLevel:
         assert sum(r.call_count for r in routes.values()) == 1  # exactly one request
 
     @respx.mock
-    def test_subdirectory_addressing_quoted(self, downloader: ZipperDownloader) -> None:
+    def test_subdirectory_addressing_quoted(self, downloader: HttpDownloader) -> None:
         routes = install_nodes_routes(respx.mock)
         directory = "GRANULE/L2A_T34UEE_A012345_20260615T095030/IMG_DATA/R10m"
         nodes = downloader.list(PRODUCT, path=directory)
@@ -92,7 +92,7 @@ class TestSingleLevel:
 
 class TestAdversarialNames:
     @respx.mock
-    def test_names_with_spaces_parens_quotes(self, downloader: ZipperDownloader) -> None:
+    def test_names_with_spaces_parens_quotes(self, downloader: HttpDownloader) -> None:
         """The OData-key-encoding regression test (SPEC §6.6)."""
         weird_dir = "S2B_MSIL2A (1).SAFE"
         weird_file = "o'brien report.xml"
@@ -116,14 +116,14 @@ class TestAdversarialNames:
         assert nodes[0].name == weird_file
         assert nodes[0].path == f"{weird_dir}/{weird_file}"
 
-    def test_reserved_characters_encoded(self, downloader: ZipperDownloader) -> None:
+    def test_reserved_characters_encoded(self, downloader: HttpDownloader) -> None:
         url = downloader._nodes_url(PRODUCT, "o'brien (1)")
         assert "Nodes(o%27brien%20%281%29)" in url  # nothing raw sneaks into the URL
 
 
 class TestRecursive:
     @respx.mock
-    def test_bfs_one_request_per_directory(self, downloader: ZipperDownloader) -> None:
+    def test_bfs_one_request_per_directory(self, downloader: HttpDownloader) -> None:
         routes = install_nodes_routes(respx.mock)
         nodes = downloader.list(PRODUCT, recursive=True)
         # every directory fetched exactly once
@@ -133,7 +133,7 @@ class TestRecursive:
         assert files == set(safe_tree.FILES)
 
     @respx.mock
-    def test_non_recursive_never_fetches_children(self, downloader: ZipperDownloader) -> None:
+    def test_non_recursive_never_fetches_children(self, downloader: HttpDownloader) -> None:
         routes = install_nodes_routes(respx.mock)
         downloader.list(PRODUCT, recursive=False)
         child_requests = sum(r.call_count for path, r in routes.items() if path)
@@ -141,12 +141,12 @@ class TestRecursive:
 
 
 class TestCrossBackendParity:
-    """SPEC §6.6 exit criterion: identical Node lists from Zipper and Exos."""
+    """SPEC §6.6 exit criterion: identical Node lists from HTTP and S3."""
 
     @respx.mock
-    def test_zipper_equals_exos_tree(self, downloader: ZipperDownloader) -> None:
+    def test_http_equals_s3_tree(self, downloader: HttpDownloader) -> None:
         install_nodes_routes(respx.mock)
-        zipper_nodes = {
+        http_nodes = {
             (n.path, n.name, n.is_dir, n.size) for n in downloader.list(PRODUCT, recursive=True)
         }
 
@@ -155,7 +155,7 @@ class TestCrossBackendParity:
         from pydantic import SecretStr
 
         from eosdk.auth.s3_keys import S3Credentials
-        from eosdk.eodata.exos import ExosDownloader
+        from eosdk.eodata.s3 import S3Downloader
 
         with mock_aws():
             client = boto3.client("s3", region_name="us-east-1")
@@ -164,14 +164,14 @@ class TestCrossBackendParity:
                 client.put_object(
                     Bucket=safe_tree.BUCKET, Key=f"{safe_tree.PREFIX}/{logical}", Body=content
                 )
-            exos = ExosDownloader(
+            s3 = S3Downloader(
                 "https://s3.us-east-1.amazonaws.com",
                 region="us-east-1",
                 credentials=S3Credentials(key_id="k", access_key="AK", secret_key=SecretStr("SK")),
             )
-            exos_product = PRODUCT.model_copy(update={"s3_path": safe_tree.S3_PATH})
-            exos_nodes = {
-                (n.path, n.name, n.is_dir, n.size) for n in exos.list(exos_product, recursive=True)
+            s3_product = PRODUCT.model_copy(update={"s3_path": safe_tree.S3_PATH})
+            s3_nodes = {
+                (n.path, n.name, n.is_dir, n.size) for n in s3.list(s3_product, recursive=True)
             }
 
-        assert zipper_nodes == exos_nodes
+        assert http_nodes == s3_nodes

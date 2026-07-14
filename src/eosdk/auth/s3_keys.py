@@ -14,7 +14,7 @@ implemented client-side: labels map to ``access_id`` + secret in a per-profile
 on-disk store (mode 0600). The configured base URL already contains the API
 root (e.g. ``.../api/user``); routes carry no version segment.
 
-Authenticated with the Keycloak JWT; produces S3 credentials for the Exos
+Authenticated with the Keycloak JWT; produces S3 credentials for the S3
 backend, which never sees Keycloak tokens.
 
 The service caps the number of concurrent key pairs per account. ``create()``
@@ -60,7 +60,7 @@ class S3Credentials(BaseModel):
         if self.secret_key is None:
             raise AuthError(
                 f"no secret available for S3 key {self.access_key!r}; "
-                "the keys manager only reveals secrets at creation time — create a new key"
+                "the credentials service only reveals secrets at creation time — create a new key"
             )
         return self.secret_key.get_secret_value()
 
@@ -173,7 +173,7 @@ class S3KeysProvider:
         response = self._transport.request(
             method,
             route(self._base, template, **kwargs.pop("route_params", {})),
-            service="keys_manager",
+            service="s3_credentials",
             auth=self._auth.httpx_auth(),
             **kwargs,
         )
@@ -182,7 +182,7 @@ class S3KeysProvider:
             if method == "POST" and template == "credentials" and _is_key_limit(response, detail):
                 raise S3KeyLimitReached(detail=detail)
             raise AuthError(
-                f"keys manager request failed with HTTP {response.status_code}: {detail}"
+                f"S3 credentials service request failed with HTTP {response.status_code}: {detail}"
             )
         return response.json() if response.content else None
 

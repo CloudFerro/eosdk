@@ -11,7 +11,7 @@ subclasses let a pipeline react differently to each failure mode:
 * ``EndpointUnreachable``    — network/DNS/TLS trouble reaching a service
 * ``UnsupportedApiVersion``  — the platform speaks an API we don't
 * ``UnsupportedQueryFeature``— a filter the chosen backend can't translate
-* ``UnsupportedCapability``  — e.g. ranged reads over the zipper backend
+* ``UnsupportedCapability``  — e.g. ranged reads over the http backend
 * ``ProductNotFound``        — bad id / product removed
 * ``QuotaExceeded``          — rate limited (carries ``retry_after`` seconds)
 * ``DownloadError``          — transfer failed after retries

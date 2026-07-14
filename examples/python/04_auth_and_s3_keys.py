@@ -61,11 +61,11 @@ def main() -> None:
         try:
             creds = client.keys.get_or_create("my-pipeline")
         except S3KeyLimitReached as exc:
-            print(f"key cap reached: {exc}")   # message names the remediation
+            print(f"key cap reached: {exc}")  # message names the remediation
             raise
         print(f"access key: {creds.access_key} (expires {creds.expiration_date or 'never'})")
 
-        for entry in client.keys.list():           # never returns secrets
+        for entry in client.keys.list():  # never returns secrets
             print(f"  key {entry.access_key}  org={entry.organization or '-'}")
 
         # -- boto3 interop -----------------------------------------------------------
@@ -74,7 +74,7 @@ def main() -> None:
         # import boto3
         # s3 = boto3.client(
         #     "s3",
-        #     endpoint_url=client.config.endpoints.exos_endpoint,
+        #     endpoint_url=client.config.endpoints.s3_endpoint,
         #     aws_access_key_id=creds.access_key,
         #     aws_secret_access_key=creds.require_secret(),
         # )

@@ -10,7 +10,7 @@ default_profile = "test"
 
 [profiles.test]  # main profile
 catalogue_stac = "https://catalogue.example.eu/stac"  # trailing comment
-zipper = "https://zipper.example.eu"
+eodata_http = "https://download.example.eu"
 keycloak = "https://auth.example.eu"
 """
 
@@ -19,33 +19,36 @@ class TestShow:
     def test_table_shows_sources(self, invoke: Invoke) -> None:
         result = invoke("config", "show")
         assert result.exit_code == 0
-        assert "zipper.example.eu" in result.output
+        # rich folds long URLs across lines; assert a fold-safe fragment
+        assert "download.example" in result.output
         assert "profile:test" in result.output
 
     def test_json_output(self, invoke: Invoke) -> None:
         result = invoke("config", "show", "--json")
         assert result.exit_code == 0
         data = json.loads(result.output)
-        assert data["zipper"]["value"] == "https://zipper.example.eu"
-        assert data["zipper"]["source"].startswith("profile:test")
+        assert data["eodata_http"]["value"] == "https://download.example.eu"
+        assert data["eodata_http"]["source"].startswith("profile:test")
 
 
 class TestSet:
     def test_set_preserves_comments(self, invoke: Invoke, tmp_path: Path) -> None:
         config = tmp_path / "config.toml"
         config.write_text(COMMENTED_TOML)
-        result = invoke("config", "set", "profiles.test.zipper", "https://zipper-canary.example.eu")
+        result = invoke(
+            "config", "set", "profiles.test.eodata_http", "https://download-canary.example.eu"
+        )
         assert result.exit_code == 0, result.output
         text = config.read_text()
         assert "# eosdk configuration — do not remove this comment" in text
         assert "# main profile" in text
         assert "# trailing comment" in text
-        assert "https://zipper-canary.example.eu" in text
+        assert "https://download-canary.example.eu" in text
 
     def test_invalid_url_leaves_file_untouched(self, invoke: Invoke, tmp_path: Path) -> None:
         config = tmp_path / "config.toml"
         before = config.read_text()
-        result = invoke("config", "set", "profiles.test.zipper", "not a url")
+        result = invoke("config", "set", "profiles.test.eodata_http", "not a url")
         assert result.exit_code == 1
         assert config.read_text() == before
 

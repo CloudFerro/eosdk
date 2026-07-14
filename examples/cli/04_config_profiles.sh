@@ -9,7 +9,7 @@ set -euo pipefail
 # Every endpoint with its value and the source that provided it. Endpoints only
 # discovery can fill show <pending> until the owning service is first used.
 eo config show
-eo config show --json | jq '.zipper'
+eo config show --json | jq '.eodata_http'
 
 # -- 2. create profiles ----------------------------------------------------------------
 # Interactive: asks for a platform root (rest discovered) or manual endpoints.
@@ -17,7 +17,7 @@ eo config show --json | jq '.zipper'
 
 # Non-interactive edits — writes preserve comments and file layout:
 # eo config set profiles.staging.platform https://staging.example.eu
-# eo config set profiles.staging.zipper   https://zipper-canary.example.eu   # pin beats discovery
+# eo config set profiles.staging.eodata_http https://download-canary.example.eu  # pin beats discovery
 # eo config set default_profile staging
 
 # -- 3. list and switch ---------------------------------------------------------------
@@ -27,7 +27,7 @@ eo config profiles
 
 # -- 4. environment variables override profiles ------------------------------------------
 # EOSDK_PROFILE=staging eo config show
-# EOSDK_ZIPPER_URL=http://localhost:8082 eo config show     # surgical override
+# EOSDK_EODATA_HTTP_URL=http://localhost:8082 eo config show  # surgical override
 # EOSDK_PLATFORM=http://localhost:8080 eo discover           # point at local discovery
 
 # -- 5. a project-local ./eosdk.toml (beats the user config, loses to env) ----------------

@@ -66,26 +66,26 @@ class TestAuthenticated:
         active_after = {c.access_key for c in logged_in_client.keys.list()}
         assert credentials.access_key not in active_after  # revoked on exit
 
-    def test_zipper_list_product_root(self, logged_in_client: Client) -> None:
+    def test_http_list_product_root(self, logged_in_client: Client) -> None:
         (product,) = list(
             logged_in_client.search(
                 collection="sentinel-2-l2a", bbox=BBOX, limit=1, protocol="stac"
             )
         )
-        nodes = logged_in_client.list(product, via="zipper")
+        nodes = logged_in_client.list(product, via="http")
         assert nodes
         assert any(n.is_dir for n in nodes) or any(n.name.endswith(".xml") for n in nodes)
 
     @pytest.mark.slow
-    def test_exos_open_ranged_read(self, logged_in_client: Client, tmp_path: Path) -> None:
+    def test_s3_open_ranged_read(self, logged_in_client: Client, tmp_path: Path) -> None:
         (product,) = list(
             logged_in_client.search(
                 collection="sentinel-2-l2a", bbox=BBOX, limit=1, protocol="stac"
             )
         )
         with skip_on_key_quota():
-            nodes = logged_in_client.list(product, via="exos", recursive=True)
+            nodes = logged_in_client.list(product, via="s3", recursive=True)
         target = next(n for n in nodes if not n.is_dir and n.name.endswith(".xml"))
-        with logged_in_client.open(product, path=target.path, via="exos") as fh:
+        with logged_in_client.open(product, path=target.path, via="s3") as fh:
             head = fh.read(256)
         assert head  # ranged read, no full-product transfer

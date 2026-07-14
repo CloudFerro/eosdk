@@ -9,24 +9,24 @@ def test_client_resolves_profile_endpoints(tmp_path: Path) -> None:
         'default_profile = "local"\n'
         "[profiles.local]\n"
         'catalogue_stac = "http://localhost:8081/stac"\n'
-        'zipper = "http://localhost:8082"\n'
+        'eodata_http = "http://localhost:8082"\n'
         'keycloak = "http://localhost:8180"\n'
     )
     with Client(profile="local", cwd=tmp_path, user_config=config) as client:
         resolved = client.config.resolved()
-    assert client.config.endpoints.zipper == "http://localhost:8082"
-    assert resolved["zipper"].source == f"profile:local({config})"
+    assert client.config.endpoints.eodata_http == "http://localhost:8082"
+    assert resolved["eodata_http"].source == f"profile:local({config})"
     assert resolved["keycloak_realm"].source == "default"
 
 
 def test_client_kwargs_override(tmp_path: Path) -> None:
     with Client(
-        endpoints={"zipper": "http://localhost:9999"},
+        endpoints={"eodata_http": "http://localhost:9999"},
         cwd=tmp_path,
         user_config=tmp_path / "missing.toml",
     ) as client:
-        assert client.config.endpoints.zipper == "http://localhost:9999"
-        assert client.config.resolved()["zipper"].source == "kwargs"
+        assert client.config.endpoints.eodata_http == "http://localhost:9999"
+        assert client.config.resolved()["eodata_http"].source == "kwargs"
 
 
 def test_client_importable_from_package_root() -> None:

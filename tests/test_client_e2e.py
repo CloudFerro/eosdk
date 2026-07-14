@@ -1,7 +1,7 @@
-"""Phase-1 exit criterion: search -> download via Zipper, library surface.
+"""Phase-1 exit criterion: search -> download via HTTP, library surface.
 
 Uses the shared platform mocks from conftest (Keycloak OIDC + token endpoint,
-STAC landing page + two search pages, Zipper $value bodies).
+STAC landing page + two search pages, download $value bodies).
 """
 
 from collections.abc import Iterator
@@ -42,7 +42,7 @@ def test_search_then_download_end_to_end(
     )
     assert len(products) == 2
 
-    reports = client.download(products, target=tmp_path / "data", via="zipper", concurrency=2)
+    reports = client.download(products, target=tmp_path / "data", via="http", concurrency=2)
     assert sorted(r.path.name for r in reports) == ["PRODUCT_A.zip", "PRODUCT_B.zip"]
     for report in reports:
         assert report.path.read_bytes() == PAYLOAD
@@ -52,9 +52,11 @@ def test_search_then_download_end_to_end(
     assert [p.name for p in products] == ["PRODUCT_A", "PRODUCT_B"]
 
     # every authenticated request carried the JWT
-    zipper_calls = [c for c in platform_mocks.calls if c.request.url.host == "zipper.example.eu"]
-    assert zipper_calls
-    assert all(c.request.headers["Authorization"] == "Bearer JWT-AT" for c in zipper_calls)
+    download_calls = [
+        c for c in platform_mocks.calls if c.request.url.host == "download.example.eu"
+    ]
+    assert download_calls
+    assert all(c.request.headers["Authorization"] == "Bearer JWT-AT" for c in download_calls)
 
 
 @respx.mock
@@ -79,12 +81,12 @@ def test_search_pending_endpoint_with_unreachable_discovery(tmp_path: Path) -> N
         client.search(collection="SENTINEL-2")
 
 
-def test_open_via_zipper_is_unsupported_capability(client: Client) -> None:
+def test_open_via_http_is_unsupported_capability(client: Client) -> None:
     from eosdk.exceptions import UnsupportedCapability
     from eosdk.models import Product
 
     with pytest.raises(UnsupportedCapability, match="open"):
-        client.open(Product(id="x", name="X"), path="a/b.jp2", via="zipper")
+        client.open(Product(id="x", name="X"), path="a/b.jp2", via="http")
 
 
 def test_unknown_via_rejected(client: Client) -> None:

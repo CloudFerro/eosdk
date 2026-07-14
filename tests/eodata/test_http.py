@@ -9,12 +9,12 @@ import pytest
 import respx
 
 from eosdk.eodata.base import ProgressEvent
-from eosdk.eodata.zipper import ZipperDownloader
+from eosdk.eodata.http import HttpDownloader
 from eosdk.exceptions import DownloadError, ProductNotFound
 from eosdk.models import Checksum, Product
 from eosdk.transport import RetryPolicy, Transport
 
-BASE = "https://zipper.example.eu"
+BASE = "https://download.example.eu"
 PAYLOAD = b"EO product payload " * 512
 
 
@@ -40,9 +40,9 @@ class FakeAuth:
 
 
 @pytest.fixture
-def downloader() -> Iterator[ZipperDownloader]:
+def downloader() -> Iterator[HttpDownloader]:
     with Transport(retry=RetryPolicy(jitter=False), sleep=lambda _: None) as transport:
-        yield ZipperDownloader(
+        yield HttpDownloader(
             BASE,
             transport=transport,
             auth=FakeAuth(),
@@ -63,7 +63,7 @@ def ok_response() -> httpx.Response:
 
 class TestHappyPath:
     @respx.mock
-    def test_downloads_and_verifies(self, downloader: ZipperDownloader, tmp_path: Path) -> None:
+    def test_downloads_and_verifies(self, downloader: HttpDownloader, tmp_path: Path) -> None:
         mock = respx.get(value_url("uuid-1")).mock(return_value=ok_response())
         reports = downloader.fetch(product(), tmp_path)
         assert len(reports) == 1
@@ -77,7 +77,7 @@ class TestHappyPath:
 
     @respx.mock
     def test_filename_fallback_without_disposition(
-        self, downloader: ZipperDownloader, tmp_path: Path
+        self, downloader: HttpDownloader, tmp_path: Path
     ) -> None:
         respx.get(value_url("uuid-1")).mock(return_value=httpx.Response(200, content=PAYLOAD))
         reports = downloader.fetch(product(with_checksum=False), tmp_path)
@@ -88,7 +88,7 @@ class TestHappyPath:
 class TestRetryRestart:
     @respx.mock
     def test_midstream_failure_restarts_without_appending(
-        self, downloader: ZipperDownloader, tmp_path: Path
+        self, downloader: HttpDownloader, tmp_path: Path
     ) -> None:
         def broken_stream(request: httpx.Request) -> httpx.Response:
             def gen() -> Iterator[bytes]:
@@ -110,20 +110,20 @@ class TestRetryRestart:
 
     @respx.mock
     def test_exhausted_retries_raise_download_error(
-        self, downloader: ZipperDownloader, tmp_path: Path
+        self, downloader: HttpDownloader, tmp_path: Path
     ) -> None:
         respx.get(value_url("uuid-1")).mock(side_effect=httpx.ReadError("dead"))
         with pytest.raises(DownloadError) as exc_info:
             downloader.fetch(product(), tmp_path)
         assert "uuid-1" in str(exc_info.value)
-        assert "zipper" in str(exc_info.value)
+        assert "backend=http" in str(exc_info.value)
         assert not list(tmp_path.iterdir())
 
 
 class TestChecksum:
     @respx.mock
     def test_corrupted_body_raises_and_cleans_up(
-        self, downloader: ZipperDownloader, tmp_path: Path
+        self, downloader: HttpDownloader, tmp_path: Path
     ) -> None:
         respx.get(value_url("uuid-1")).mock(return_value=httpx.Response(200, content=b"corrupted"))
         with pytest.raises(DownloadError, match="checksum mismatch"):
@@ -133,7 +133,7 @@ class TestChecksum:
 
 class TestProgress:
     @respx.mock
-    def test_event_sequence_monotonic(self, downloader: ZipperDownloader, tmp_path: Path) -> None:
+    def test_event_sequence_monotonic(self, downloader: HttpDownloader, tmp_path: Path) -> None:
         respx.get(value_url("uuid-1")).mock(return_value=ok_response())
         events: list[ProgressEvent] = []
         downloader.fetch(product(), tmp_path, progress=events.append)
@@ -149,7 +149,7 @@ class TestProgress:
 
 class TestConcurrencyAndErrors:
     @respx.mock
-    def test_bounded_concurrency(self, downloader: ZipperDownloader, tmp_path: Path) -> None:
+    def test_bounded_concurrency(self, downloader: HttpDownloader, tmp_path: Path) -> None:
         in_flight = 0
         max_in_flight = 0
         gate = threading.Lock()
@@ -174,7 +174,7 @@ class TestConcurrencyAndErrors:
 
     @respx.mock
     def test_one_missing_product_others_complete(
-        self, downloader: ZipperDownloader, tmp_path: Path
+        self, downloader: HttpDownloader, tmp_path: Path
     ) -> None:
         good = product("uuid-good", with_checksum=False)
         bad = product("uuid-bad", with_checksum=False)
@@ -188,7 +188,7 @@ class TestConcurrencyAndErrors:
 class TestInterrupt:
     @respx.mock
     def test_keyboard_interrupt_cancels_queued_and_aborts_in_flight(
-        self, downloader: ZipperDownloader, tmp_path: Path
+        self, downloader: HttpDownloader, tmp_path: Path
     ) -> None:
         """Ctrl+C (KeyboardInterrupt at future.result()) must re-raise, cancel
         queued products, and stop the in-flight transfer within one chunk."""
@@ -223,7 +223,7 @@ class TestInterrupt:
 
     @respx.mock
     def test_cancel_event_aborts_transfer_and_removes_part_file(
-        self, downloader: ZipperDownloader, tmp_path: Path
+        self, downloader: HttpDownloader, tmp_path: Path
     ) -> None:
         cancel = threading.Event()
 
@@ -249,19 +249,19 @@ class TestResumeNoOp:
     @respx.mock
     def test_resume_true_logs_and_restarts(
         self,
-        downloader: ZipperDownloader,
+        downloader: HttpDownloader,
         tmp_path: Path,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         respx.get(value_url("uuid-1")).mock(return_value=ok_response())
-        with caplog.at_level("INFO", logger="eosdk.eodata.zipper"):
+        with caplog.at_level("INFO", logger="eosdk.eodata.http"):
             downloader.fetch(product(), tmp_path, resume=True)
         assert any("does not support" in r.message for r in caplog.records)
 
 
 def test_unknown_strategy_rejected() -> None:
     with Transport() as transport:
-        with pytest.raises(ValueError, match="unknown zipper strategy"):
-            ZipperDownloader(BASE, transport=transport, auth=FakeAuth(), strategy="ftp")
+        with pytest.raises(ValueError, match="unknown http strategy"):
+            HttpDownloader(BASE, transport=transport, auth=FakeAuth(), strategy="ftp")
         with pytest.raises(NotImplementedError, match="resto"):
-            ZipperDownloader(BASE, transport=transport, auth=FakeAuth(), strategy="resto")
+            HttpDownloader(BASE, transport=transport, auth=FakeAuth(), strategy="resto")

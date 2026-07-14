@@ -99,15 +99,16 @@ def project_endpoints(document: DiscoveryDocument) -> dict[str, str]:
     if isinstance(catalogue.get("odata"), dict) and catalogue["odata"].get("url"):
         projected["catalogue_odata"] = str(catalogue["odata"]["url"])
 
-    exos = services.get("exos", {})
-    if exos.get("endpoint"):
-        projected["exos_endpoint"] = str(exos["endpoint"])
-    if exos.get("region"):
-        projected["exos_region"] = str(exos["region"])
-
-    keys_manager = services.get("keys_manager", {})
-    if keys_manager.get("url"):
-        projected["keys_manager"] = str(keys_manager["url"])
+    data_access = services.get("data_access", {})
+    s3 = data_access.get("s3", {}) if isinstance(data_access, dict) else {}
+    if isinstance(s3, dict):
+        if s3.get("endpoint"):
+            projected["s3_endpoint"] = str(s3["endpoint"])
+        if s3.get("region"):
+            projected["s3_region"] = str(s3["region"])
+        credentials = s3.get("credentials", {})
+        if isinstance(credentials, dict) and credentials.get("url"):
+            projected["s3_credentials"] = str(credentials["url"])
 
     auth = services.get("auth", {})
     issuer = auth.get("issuer")
@@ -123,16 +124,15 @@ def project_endpoints(document: DiscoveryDocument) -> dict[str, str]:
         # Public-client id only — this document must never carry a secret.
         projected["keycloak_client_id"] = str(auth["client_id"])
 
-    zipper = services.get("zipper", {})
-    strategies = _service_strategies(zipper)
+    http = data_access.get("http", {}) if isinstance(data_access, dict) else {}
+    strategies = _service_strategies(http) if isinstance(http, dict) else {}
     if strategies:
         # base field: highest-preference strategy's URL trimmed of its route
         # suffix is deployment-specific; store the first strategy's URL as base
         # only when a single strategy exists — otherwise per-strategy URLs rule.
         first = next(iter(strategies.values()))
-        projected["zipper"] = first.url or ""
-        projected = {k: v for k, v in projected.items() if v}
-    return projected
+        projected["eodata_http"] = first.url or ""
+    return {k: v for k, v in projected.items() if v}
 
 
 def _service_strategies(service: dict[str, Any]) -> dict[str, StrategyInfo]:
@@ -158,7 +158,10 @@ def strategy_sets(document: DiscoveryDocument) -> dict[str, tuple[Strategy, ...]
     omits them.
     """
     result: dict[str, tuple[Strategy, ...]] = {}
-    service_map = {"zipper": document.services.get("zipper")}
+    data_access = document.services.get("data_access")
+    service_map = {
+        "http": data_access.get("http") if isinstance(data_access, dict) else None,
+    }
 
     for backend, builtin_strategies in BUILTIN_MATRIX.items():
         service = service_map.get(backend)
@@ -193,14 +196,21 @@ def strategy_sets(document: DiscoveryDocument) -> dict[str, tuple[Strategy, ...]
 
 
 def api_versions(document: DiscoveryDocument) -> dict[str, str]:
-    """(service or service/strategy) -> advertised api_version, where present."""
+    """Slash-joined document path -> advertised api_version, where present.
+
+    Keys mirror the document's nesting, e.g. ``catalogue/odata``,
+    ``data_access/http/odata``, ``data_access/s3/credentials``.
+    """
     versions: dict[str, str] = {}
-    for service_name, service in document.services.items():
-        if not isinstance(service, dict):
-            continue
-        if isinstance(service.get("api_version"), str):
-            versions[service_name] = service["api_version"]
-        for strategy_name, value in service.items():
-            if isinstance(value, dict) and isinstance(value.get("api_version"), str):
-                versions[f"{service_name}/{strategy_name}"] = value["api_version"]
+
+    def walk(prefix: str, mapping: dict[str, Any]) -> None:
+        for key, value in mapping.items():
+            if not isinstance(value, dict):
+                continue
+            path = f"{prefix}/{key}" if prefix else key
+            if isinstance(value.get("api_version"), str):
+                versions[path] = value["api_version"]
+            walk(path, value)
+
+    walk("", document.services)
     return versions

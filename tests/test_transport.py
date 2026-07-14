@@ -79,11 +79,11 @@ def test_429_honors_retry_after_then_raises_quota() -> None:
     respx.get(f"{BASE}/x").mock(return_value=httpx.Response(429, headers={"Retry-After": "7"}))
     t = make_transport()
     with pytest.raises(QuotaExceeded) as exc_info:
-        t.request("GET", f"{BASE}/x", service="zipper")
+        t.request("GET", f"{BASE}/x", service="eodata_http")
     assert exc_info.value.retry_after == 7.0
     assert all(s >= 7.0 for s in t.slept)  # type: ignore[attr-defined]
     assert len(t.slept) == t.retry.attempts - 1  # type: ignore[attr-defined]
-    assert "zipper" in str(exc_info.value)
+    assert "eodata_http" in str(exc_info.value)
 
 
 @respx.mock

@@ -25,7 +25,7 @@ eo search --collection sentinel-2-l2a \
           --from 2026-06-01 --to 2026-06-30 \
           --filter "cloudCover=<10" \
           --limit 2 --json \
-  | eo download - --via zipper --output ./data --concurrency 4
+  | eo download - --via http --output ./data --concurrency 4
 
 # -- 3. JSON Lines interoperate with standard tooling ----------------------------
 # Names and sizes only:
@@ -43,7 +43,7 @@ eo search --collection sentinel-2-l2a --from 2026-06-01 --to 2026-06-08 \
 # eo download 5b9f4d4e-... c2a7de3f-... --output ./data
 
 # -- 5. useful switches ------------------------------------------------------------
-# --via exos          S3 backend (resumable; S3 keys minted automatically)
+# --via s3            S3 backend (resumable; S3 keys minted automatically)
 # --no-checksum       skip checksum verification
 # --quiet             no progress bars (progress goes to stderr, so pipes are
 #                     safe either way)

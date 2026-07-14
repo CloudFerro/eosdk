@@ -2,6 +2,36 @@
 
 ## Unreleased (Phase 4 — hardening)
 
+### Changed — protocol-based naming (breaking, pre-1.0)
+- Deployment-specific service names (Zipper, Exos, Keys Manager) are gone from
+  the public surface; data access is named by protocol instead. Discovery
+  schema stays `1.0` (not in production yet).
+- Discovery document: `zipper` / `exos` / `keys_manager` are replaced by one
+  `data_access` service split by transport protocol — `data_access.http` with
+  the `odata` / `resto` strategies, and `data_access.s3` with `endpoint`,
+  `region`, and a `credentials` object of the shape
+  `{ "url": ..., "api_version": ... }` (SPEC §6.2 documents it).
+- Public API: `via="zipper" | "exos"` → `via="http" | "s3"` (`download`,
+  `list`, `open`), CLI `--via http|s3`.
+- Config/profile fields and env vars: `zipper` → `eodata_http`
+  (`EOSDK_EODATA_HTTP_URL`), `exos_endpoint` / `exos_region` → `s3_endpoint` /
+  `s3_region` (`EOSDK_S3_ENDPOINT` / `EOSDK_S3_REGION`), `keys_manager` →
+  `s3_credentials` (`EOSDK_S3_CREDENTIALS_URL`).
+- Version-guard keys follow the document paths: `zipper/odata` →
+  `data_access/http/odata`, `keys_manager` → `data_access/s3/credentials`;
+  `eosdk.discovery.models.api_versions` now walks the nested document and
+  emits slash-joined paths.
+- Internals renamed to match: `eosdk.eodata.zipper.ZipperDownloader` →
+  `eosdk.eodata.http.HttpDownloader`, `eosdk.eodata.exos.ExosDownloader` →
+  `eosdk.eodata.s3.S3Downloader` (both exported from `eosdk.eodata`).
+- `eo doctor`: service checks renamed — `STAC catalogue` → `Catalogue (STAC)`,
+  `OData catalogue` → `Catalogue (OData)`, `Zipper eodata` → `EOData (HTTP)`,
+  `Exos eodata` → `EOData (S3)`, `Exos (S3)` → `S3 credentials`. Readiness
+  results no longer print the probed `/ready` URL; they report `ready`,
+  `not ready (HTTP <code>)`, or `not available (endpoint unreachable)`.
+- `eo discover`: the services table renders the nested `data_access` groups
+  (strategy column shows `http/odata`, `s3/credentials`, ...).
+
 ### Added
 - Discovery document `platform` block (optional): `name` + `description`
   identify the deployment. On document load the SDK saves the whole projected

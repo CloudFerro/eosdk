@@ -163,14 +163,14 @@ class DownloadError(EosdkError):
 
 
 class S3KeyLimitReached(EosdkError):
-    """The S3 Keys Manager refused to create a key pair: the account's cap on
+    """The S3 credentials service refused to create a key pair: the account's cap on
     concurrent keys is reached. Distinct from :class:`QuotaExceeded` (429 rate
     limiting): this is a resource cap that only revoking a key can clear."""
 
     def __init__(
         self,
         *,
-        service: str = "keys manager",
+        service: str = "s3_credentials",
         detail: str | None = None,
         limit: int | None = None,
     ) -> None:

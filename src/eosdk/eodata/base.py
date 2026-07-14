@@ -2,7 +2,7 @@
 
 Retries, checksum verification, progress events, and bounded concurrency are
 implemented once here; backends provide ``_open_stream`` and declare whether
-they support resume (Zipper does not — its transfers restart from zero).
+they support resume (the HTTP backend does not — its transfers restart from zero).
 
 A ``KeyboardInterrupt`` in the caller (Ctrl+C) cancels queued products and
 makes in-flight workers abort at the next chunk boundary before re-raising.

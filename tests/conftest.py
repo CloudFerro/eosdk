@@ -1,4 +1,4 @@
-"""Shared fixtures: a fully mocked platform (Keycloak + STAC + Zipper)."""
+"""Shared fixtures: a fully mocked platform (Keycloak + STAC + HTTP download)."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ def _blank_builtin_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 
 KEYCLOAK = "https://auth.example.eu"
 CATALOGUE = "https://catalogue.example.eu/stac"
-ZIPPER = "https://zipper.example.eu"
+EODATA_HTTP = "https://download.example.eu"
 TOKEN_URL = f"{KEYCLOAK}/realms/eodata/protocol/openid-connect/token"
 PAYLOAD = b"zipped product bytes " * 128
 
@@ -43,15 +43,15 @@ def stac_item(uuid: str, name: str) -> dict[str, Any]:
     item = json.loads((FIXTURES / "stac_item_s2.json").read_text())
     item["id"] = name
     product = item["assets"]["Product"]
-    # the UUID lives in the Product asset's zipper href (real CDSE shape)
-    product["href"] = f"{ZIPPER}/odata/v1/Products({uuid})/$value"
+    # the UUID lives in the Product asset's download href (real CDSE shape)
+    product["href"] = f"{EODATA_HTTP}/odata/v1/Products({uuid})/$value"
     # varint multihash: md5 = code d5 (varint d5 01) + length 10 + digest
     product["file:checksum"] = "d50110" + hashlib.md5(PAYLOAD).hexdigest()
     return item
 
 
-KEYS_MANAGER = "https://keys.example.eu/api"
-EXOS_ENDPOINT = "https://s3.us-east-1.amazonaws.com"  # moto intercepts AWS endpoints only
+S3_CREDENTIALS = "https://keys.example.eu/api"
+S3_ENDPOINT = "https://s3.us-east-1.amazonaws.com"  # moto intercepts AWS endpoints only
 
 
 def write_profile_config(path: Path) -> Path:
@@ -59,12 +59,12 @@ def write_profile_config(path: Path) -> Path:
         'default_profile = "test"\n'
         "[profiles.test]\n"
         f'catalogue_stac = "{CATALOGUE}"\n'
-        f'zipper = "{ZIPPER}"\n'
+        f'eodata_http = "{EODATA_HTTP}"\n'
         f'keycloak = "{KEYCLOAK}"\n'
         'keycloak_realm = "eodata"\n'
-        f'keys_manager = "{KEYS_MANAGER}"\n'
-        f'exos_endpoint = "{EXOS_ENDPOINT}"\n'
-        'exos_region = "us-east-1"\n'
+        f's3_credentials = "{S3_CREDENTIALS}"\n'
+        f's3_endpoint = "{S3_ENDPOINT}"\n'
+        's3_region = "us-east-1"\n'
     )
     return path
 
@@ -127,7 +127,7 @@ def platform_mocks() -> Iterator[respx.Router]:
             )
         )
         for uuid in ("uuid-a", "uuid-b"):
-            router.get(f"{ZIPPER}/odata/v1/Products({uuid})/$value").mock(
+            router.get(f"{EODATA_HTTP}/odata/v1/Products({uuid})/$value").mock(
                 return_value=httpx.Response(
                     200,
                     content=PAYLOAD,

@@ -20,8 +20,8 @@
 
 ## Data access
 
-::: eosdk.eodata.zipper.ZipperDownloader
-::: eosdk.eodata.exos.ExosDownloader
+::: eosdk.eodata.http.HttpDownloader
+::: eosdk.eodata.s3.S3Downloader
 
 ## Exceptions
 

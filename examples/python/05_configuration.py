@@ -4,7 +4,7 @@ What this shows
 ---------------
 * the endpoint resolution order (most specific wins):
     1. explicit kwargs to ``Client(...)``
-    2. environment variables (``EOSDK_ZIPPER_URL``, ``EOSDK_PROFILE``, ...)
+    2. environment variables (``EOSDK_EODATA_HTTP_URL``, ``EOSDK_PROFILE``, ...)
     3. project-local ``./eosdk.toml``
     4. user config ``~/.config/eosdk/config.toml`` (selected profile)
     5. the platform's remote discovery document
@@ -47,9 +47,10 @@ def main() -> None:
 
     # -- surgical overrides: pin one endpoint, keep the rest --------------------------
     # Handy for testing one service locally against otherwise-real infra.
-    with Client(endpoints={"zipper": "http://localhost:8082"}) as client:
+    with Client(endpoints={"eodata_http": "http://localhost:8082"}) as client:
         resolved = client.config.resolved()
-        print(f"\nzipper pinned -> {resolved['zipper'].display} [{resolved['zipper'].source}]")
+        pinned = resolved["eodata_http"]
+        print(f"\neodata_http pinned -> {pinned.display} [{pinned.source}]")
 
     # -- other useful constructor knobs ------------------------------------------------
     # Client(

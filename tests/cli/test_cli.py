@@ -84,7 +84,7 @@ class TestDownload:
 
         out_dir = tmp_path / "data"
         result = invoke(
-            "download", "-", "-o", str(out_dir), "--via", "zipper", input=search_result.output
+            "download", "-", "-o", str(out_dir), "--via", "http", input=search_result.output
         )
         assert result.exit_code == 0, result.output
         files = sorted(p.name for p in out_dir.iterdir())
@@ -105,7 +105,7 @@ class TestDownload:
     ) -> None:
         import httpx
 
-        platform_mocks.get("https://zipper.example.eu/odata/v1/Products(uuid-nope)/$value").mock(
+        platform_mocks.get("https://download.example.eu/odata/v1/Products(uuid-nope)/$value").mock(
             return_value=httpx.Response(404)
         )
         invoke("auth", "login", "--username", "alice", "--password-stdin", input="pw\n")

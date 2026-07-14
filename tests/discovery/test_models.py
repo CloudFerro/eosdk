@@ -26,7 +26,7 @@ class TestParse:
     def test_spec_example_parses(self) -> None:
         document = parse_document(spec_document())
         assert document.version == "1.0"
-        assert "zipper" in document.services
+        assert "data_access" in document.services
 
     @pytest.mark.parametrize("version", ["2.0", "0.9", "banana"])
     def test_unknown_major_rejected_whole(self, version: str) -> None:
@@ -101,13 +101,13 @@ class TestProjection:
         projected = project_endpoints(parse_document(spec_document()))
         assert projected["catalogue_stac"] == "https://catalogue.example.eu/stac"
         assert projected["catalogue_odata"] == "https://catalogue.example.eu/odata"
-        assert projected["exos_endpoint"] == "https://s3.example.eu"
-        assert projected["exos_region"] == "default"
-        assert projected["keys_manager"] == "https://keys.example.eu/api"
+        assert projected["s3_endpoint"] == "https://s3.example.eu"
+        assert projected["s3_region"] == "default"
+        assert projected["s3_credentials"] == "https://keys.example.eu/api"
         assert projected["keycloak"] == "https://auth.example.eu"
         assert projected["keycloak_realm"] == "eodata"
         assert projected["keycloak_client_id"] == "example-public"
-        assert projected["zipper"]  # multi-strategy service collapses to a base
+        assert projected["eodata_http"]  # multi-strategy service collapses to a base
 
     def test_client_id_absent_not_projected(self) -> None:
         raw = spec_document()
@@ -133,53 +133,54 @@ class TestProjection:
 class TestStrategySets:
     def test_spec_example_merges_deprecation(self) -> None:
         sets = strategy_sets(parse_document(spec_document()))
-        zipper = {s.name: s for s in sets["zipper"]}
-        assert zipper["odata"].deprecated is False
-        assert zipper["odata"].url == "https://zipper.example.eu/odata"
-        assert zipper["resto"].deprecated is True
-        assert zipper["resto"].sunset == dt.date(2027, 1, 1)
-        assert zipper["resto"].replacement == "odata"
+        http = {s.name: s for s in sets["http"]}
+        assert http["odata"].deprecated is False
+        assert http["odata"].url == "https://download.example.eu/odata"
+        assert http["resto"].deprecated is True
+        assert http["resto"].sunset == dt.date(2027, 1, 1)
+        assert http["resto"].replacement == "odata"
         # order = built-in preference
-        assert [s.name for s in sets["zipper"]] == ["odata", "resto"]
+        assert [s.name for s in sets["http"]] == ["odata", "resto"]
 
     def test_capabilities_restriction(self) -> None:
         raw = spec_document()
-        raw["services"]["zipper"]["odata"]["capabilities"] = ["download"]
+        raw["services"]["data_access"]["http"]["odata"]["capabilities"] = ["download"]
         sets = strategy_sets(parse_document(raw))
-        odata = next(s for s in sets["zipper"] if s.name == "odata")
+        odata = next(s for s in sets["http"] if s.name == "odata")
         assert odata.capabilities == {Capability.DOWNLOAD}  # list disabled remotely
 
     def test_capabilities_cannot_extend(self) -> None:
         raw = spec_document()
-        raw["services"]["zipper"]["resto"]["capabilities"] = ["download", "open", "list"]
+        resto_raw = raw["services"]["data_access"]["http"]["resto"]
+        resto_raw["capabilities"] = ["download", "open", "list"]
         sets = strategy_sets(parse_document(raw))
-        resto = next(s for s in sets["zipper"] if s.name == "resto")
+        resto = next(s for s in sets["http"] if s.name == "resto")
         assert resto.capabilities == {Capability.DOWNLOAD}  # built-in matrix rules
 
     def test_service_described_but_strategy_missing_is_unavailable(self) -> None:
         raw = spec_document()
-        del raw["services"]["zipper"]["resto"]
+        del raw["services"]["data_access"]["http"]["resto"]
         sets = strategy_sets(parse_document(raw))
-        resto = next(s for s in sets["zipper"] if s.name == "resto")
+        resto = next(s for s in sets["http"] if s.name == "resto")
         assert resto.available is False
 
     def test_service_absent_keeps_builtins(self) -> None:
         raw = spec_document()
-        del raw["services"]["zipper"]
+        del raw["services"]["data_access"]["http"]
         sets = strategy_sets(parse_document(raw))
-        assert all(s.available for s in sets["zipper"])
+        assert all(s.available for s in sets["http"])
 
     def test_unknown_strategy_ignored(self) -> None:
         raw = spec_document()
-        raw["services"]["zipper"]["grpc"] = {"url": "https://z.example.eu/grpc"}
+        raw["services"]["data_access"]["http"]["grpc"] = {"url": "https://d.example.eu/grpc"}
         sets = strategy_sets(parse_document(raw))
-        assert {s.name for s in sets["zipper"]} == {"odata", "resto"}
+        assert {s.name for s in sets["http"]} == {"odata", "resto"}
 
 
 class TestApiVersions:
     def test_extraction(self) -> None:
         versions = api_versions(parse_document(spec_document()))
-        assert versions["keys_manager"] == "v1"
-        assert versions["zipper/odata"] == "v1"
+        assert versions["data_access/s3/credentials"] == "v1"
+        assert versions["data_access/http/odata"] == "v1"
         assert versions["catalogue/odata"] == "v1"
-        assert "exos" not in versions  # versioning owned externally
+        assert "data_access/s3" not in versions  # versioning owned externally

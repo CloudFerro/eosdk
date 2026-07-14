@@ -17,7 +17,7 @@
   },
   "assets": {
     "Product": {
-      "href": "https://zipper.example.eu/odata/v1/Products(f9d8a1c2-3b4e-5f60-7a8b-9c0d1e2f3a4b)/$value",
+      "href": "https://download.example.eu/odata/v1/Products(f9d8a1c2-3b4e-5f60-7a8b-9c0d1e2f3a4b)/$value",
       "type": "application/zip",
       "title": "Product",
       "roles": ["data", "metadata", "archive"],
@@ -33,7 +33,7 @@
       "file:checksum": "1620f88fa1d881d56bd4c17737bc3ff0d416c48b72959f97e98d6bfd61aaab87bdd4",
       "alternate": {
         "https": {
-          "href": "https://zipper.example.eu/odata/v1/Products(f9d8a1c2-3b4e-5f60-7a8b-9c0d1e2f3a4b)/Nodes(S2B_MSIL2A_20260615T095029_N0511_R079_T34UEE_20260615T105512.SAFE)/Nodes(GRANULE)/Nodes(L2A_T34UEE_A012345_20260615T095030)/Nodes(IMG_DATA)/Nodes(R10m)/Nodes(T34UEE_B04_10m.jp2)/$value"
+          "href": "https://download.example.eu/odata/v1/Products(f9d8a1c2-3b4e-5f60-7a8b-9c0d1e2f3a4b)/Nodes(S2B_MSIL2A_20260615T095029_N0511_R079_T34UEE_20260615T105512.SAFE)/Nodes(GRANULE)/Nodes(L2A_T34UEE_A012345_20260615T095030)/Nodes(IMG_DATA)/Nodes(R10m)/Nodes(T34UEE_B04_10m.jp2)/$value"
         }
       },
       "auth:refs": ["s3"]

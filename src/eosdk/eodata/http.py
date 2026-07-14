@@ -1,8 +1,9 @@
-"""Zipper HTTP download backend (SPEC §6.6).
+"""HTTP download backend (SPEC §6.6).
 
-Zipper serves whole objects only — it supports neither HTTP ``Range`` requests
-nor partial reads, so ``supports_resume`` is False: an interrupted transfer is
-restarted from the beginning (a logged no-op, never an error).
+The HTTP data-access service serves whole objects only — it supports neither
+HTTP ``Range`` requests nor partial reads, so ``supports_resume`` is False: an
+interrupted transfer is restarted from the beginning (a logged no-op, never an
+error).
 
 Strategy scaffolding (SPEC §6.3): the ``odata`` strategy is current, ``resto``
 is a recognized fallback name that is not implemented in Phase 1. Discovery-
@@ -26,7 +27,7 @@ from eosdk.transport import RetryPolicy, route
 def _quote_segment(segment: str) -> str:
     """Encode a node name for a ``Nodes({name})`` URL segment.
 
-    CDSE's zipper addresses nodes with *unquoted* names inside the parentheses
+    CDSE's download service addresses nodes with *unquoted* names inside the parentheses
     (verified against the ``alternate.https`` hrefs the live STAC API emits:
     ``.../Products(<uuid>)/Nodes(S2A_...SAFE)/Nodes(GRANULE)/...``), so names
     are percent-encoded rather than OData-key-quoted; parentheses and other
@@ -92,8 +93,8 @@ class _HttpxStream:
         return self._response.iter_bytes(chunk_size=1 << 16)
 
 
-class ZipperDownloader(BaseDownloader):
-    backend: ClassVar[str] = "zipper"
+class HttpDownloader(BaseDownloader):
+    backend: ClassVar[str] = "http"
     supports_resume: ClassVar[bool] = False
 
     def __init__(
@@ -111,10 +112,10 @@ class ZipperDownloader(BaseDownloader):
         self._auth = auth
         chosen = strategy or STRATEGY_PREFERENCE[0]
         if chosen not in STRATEGY_PREFERENCE:
-            raise ValueError(f"unknown zipper strategy {chosen!r}")
+            raise ValueError(f"unknown http strategy {chosen!r}")
         if chosen != "odata":
             raise NotImplementedError(
-                f"zipper strategy {chosen!r} is recognized but not implemented yet"
+                f"http strategy {chosen!r} is recognized but not implemented yet"
             )
         self._strategy = chosen
 
@@ -122,12 +123,12 @@ class ZipperDownloader(BaseDownloader):
     def _open_stream(self, product: Product) -> Iterator[Stream]:
         url = route(self._base, ROUTES[self._strategy]["product"], id=product.id)
         with self._transport.stream(
-            "GET", url, service="zipper", auth=self._auth.httpx_auth()
+            "GET", url, service="eodata_http", auth=self._auth.httpx_auth()
         ) as response:
             if response.status_code == 404:
                 raise ProductNotFound(product_id=product.id, backend=self.backend)
             if response.status_code == 429:
-                raise QuotaExceeded(service="zipper")
+                raise QuotaExceeded(service="eodata_http")
             response.raise_for_status()
             yield _HttpxStream(response, fallback_name=f"{product.name}.zip")
 
@@ -142,7 +143,9 @@ class ZipperDownloader(BaseDownloader):
         progress: Callable[[ProgressEvent], None] | None = None,
     ) -> list[DownloadReport]:
         if resume:
-            logger.info("zipper does not support HTTP Range; interrupted transfers restart")
+            logger.info(
+                "the http backend does not support HTTP Range; interrupted transfers restart"
+            )
         return super().fetch(
             products,
             target,
@@ -170,8 +173,9 @@ class ZipperDownloader(BaseDownloader):
     ) -> builtins.list[Node]:
         """Immediate children of ``path`` (root by default); BFS when recursive.
 
-        Recursion costs one request per directory here — Exos walks a prefix in
-        a single paginated request. The asymmetry is documented, not hidden.
+        Recursion costs one request per directory here — the S3 backend walks a
+        prefix in a single paginated request. The asymmetry is documented, not
+        hidden.
         """
         nodes = self._list_level(product, path)
         if not recursive:
@@ -194,7 +198,7 @@ class ZipperDownloader(BaseDownloader):
         response = self._transport.request(
             "GET",
             self._nodes_url(product, path),
-            service="zipper",
+            service="eodata_http",
             auth=self._auth.httpx_auth(),
         )
         if response.status_code == 404:

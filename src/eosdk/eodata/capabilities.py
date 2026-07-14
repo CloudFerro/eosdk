@@ -46,11 +46,11 @@ class Strategy:
 
 # Ordered preference per backend (SPEC §6.6 capability matrix).
 BUILTIN_MATRIX: dict[str, tuple[Strategy, ...]] = {
-    "zipper": (
+    "http": (
         Strategy("odata", frozenset({Capability.DOWNLOAD, Capability.LIST})),
         Strategy("resto", frozenset({Capability.DOWNLOAD})),
     ),
-    "exos": (Strategy("s3", frozenset({Capability.DOWNLOAD, Capability.LIST, Capability.OPEN})),),
+    "s3": (Strategy("s3", frozenset({Capability.DOWNLOAD, Capability.LIST, Capability.OPEN})),),
 }
 
 

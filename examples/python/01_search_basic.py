@@ -27,10 +27,10 @@ def main() -> None:
         # -- a bounded search --------------------------------------------------
         results = client.search(
             collection="sentinel-2-l2a",
-            bbox=(22.5, 52.9, 24.0, 53.5),          # minx, miny, maxx, maxy (WGS84)
-            datetime="2026-06-01/2026-06-30",       # ISO interval; open ends with ".."
-            filters={"cloudCover": "<20"},          # bare value = eq; <, <=, >, >=, != work too
-            sort="-datetime",                       # '+field' ascending, '-field' descending
+            bbox=(22.5, 52.9, 24.0, 53.5),  # minx, miny, maxx, maxy (WGS84)
+            datetime="2026-06-01/2026-06-30",  # ISO interval; open ends with ".."
+            filters={"cloudCover": "<20"},  # bare value = eq; <, <=, >, >=, != work too
+            sort="-datetime",  # '+field' ascending, '-field' descending
             limit=25,
         )
 

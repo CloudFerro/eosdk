@@ -14,7 +14,7 @@ eo search --collection sentinel-2-l2a \
           --bbox 22.5,52.9,24.0,53.5 \
           --from 2026-06-01 --to 2026-06-30 \
           --filter "cloudCover=<20" --json \
-  | eo download - --via zipper -o ./data
+  | eo download - --via http -o ./data
 ```
 
 `--json` emits one product per line (JSON Lines), so search results pipe
@@ -36,18 +36,18 @@ products = client.search(
     limit=50,
 )
 
-client.download(products, target="./data", via="zipper",
+client.download(products, target="./data", via="http",
                 concurrency=4, resume=True, checksum=True)
 
 # SearchResult is re-iterable — pages are cached, not re-queried:
 product = next(iter(products))
 
 # What files are inside the product?
-nodes = client.list(product, via="zipper", recursive=True)
+nodes = client.list(product, via="http", recursive=True)
 band = next(n for n in nodes if n.path.endswith("B04_10m.jp2"))
 
 # Ranged read over S3 — no full-product transfer (S3 keys auto-managed):
-with client.open(product, path=band.path, via="exos") as f:
+with client.open(product, path=band.path, via="s3") as f:
     header = f.read(1024)
 ```
 
@@ -55,8 +55,8 @@ with client.open(product, path=band.path, via="exos") as f:
 
 | Backend | `download` | `list` | `open` (ranged reads) | resume |
 |---|---|---|---|---|
-| `zipper` | ✓ | ✓ | — | — (restarts) |
-| `exos` (S3) | ✓ | ✓ | ✓ | ✓ |
+| `http` | ✓ | ✓ | — | — (restarts) |
+| `s3` | ✓ | ✓ | ✓ | ✓ |
 
 Requesting a capability a backend lacks raises `UnsupportedCapability` before
 any network traffic.

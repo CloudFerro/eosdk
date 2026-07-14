@@ -5,12 +5,12 @@ import httpx
 import respx
 
 from tests.cli.conftest import Invoke
-from tests.conftest import KEYS_MANAGER
+from tests.conftest import S3_CREDENTIALS
 
 SECRET = "SUPER-SECRET-KEY-MATERIAL"
 ACCESS_ID = "AKIAEXAMPLE"
 FOREIGN_ACCESS_ID = "AKIAFOREIGN"  # created outside eosdk: no local secret
-CREDENTIALS_URL = f"{KEYS_MANAGER}/credentials"
+CREDENTIALS_URL = f"{S3_CREDENTIALS}/credentials"
 
 
 def install_keys_routes(router: respx.Router, *, include_foreign: bool = False) -> None:

@@ -1,7 +1,7 @@
 # eosdk
 
 Python SDK and CLI (`eo`) for Earth Observation services: unified catalogue search
-(STAC / OData), EOData downloads (Zipper / Exos S3), and fully managed authentication
+(STAC / OData), EOData downloads (HTTP / S3), and fully managed authentication
 (Keycloak JWT, S3 key lifecycle) behind one coherent interface — *search, then download*.
 
 > Status: pre-release, under active development. See [SPEC.md](SPEC.md) for the full
@@ -12,7 +12,7 @@ Python SDK and CLI (`eo`) for Earth Observation services: unified catalogue sear
 - **Catalogue search** — one API over both STAC and OData catalogues. Filter by
   collection, bounding box, time range and attributes (e.g. cloud cover); results
   come back as plain products you can page, sort, and pipe.
-- **EOData downloads** — pull products through the Zipper HTTP backend or the Exos
+- **EOData downloads** — pull products through the HTTP backend or the S3
   S3 backend with a single call. Concurrency, checksum verification, and resume are
   handled for you.
 - **Managed authentication** — Keycloak login (device flow or username/password),
@@ -33,9 +33,9 @@ Python SDK and CLI (`eo`) for Earth Observation services: unified catalogue sear
   download -` is the whole workflow; JSON Lines interoperate cleanly with `jq`, `head`,
   and the rest of the Unix toolbox.
 - **Auth you never think about.** Log in once; the session is cached per profile and
-  reused by every later CLI *and* library call. S3 keys for the Exos backend are minted
+  reused by every later CLI *and* library call. S3 keys for the S3 backend are minted
   automatically when needed.
-- **Backend details stay out of your way.** Zipper vs. Exos S3, STAC vs. OData — pick
+- **Backend details stay out of your way.** HTTP vs. S3, STAC vs. OData — pick
   one flag; the SDK owns the protocol, retries, and credential plumbing.
 - **Typed and strict.** Pydantic models, `py.typed`, and a strict-mypy codebase, so the
   library is pleasant to build on.
@@ -116,12 +116,12 @@ eo search --collection sentinel-2-l2a \
           --from 2026-06-01 --to 2026-06-30 \
           --filter "cloudCover=<10" \
           --limit 2 --json \
-  | eo download - --via zipper --output ./data --concurrency 4
+  | eo download - --via http --output ./data --concurrency 4
 ```
 
 Stop a running download with `Ctrl+C`: queued products are dropped and in-flight
-transfers abort. Re-running the same command picks the batch up again — `--via exos`
-resumes partially downloaded files, `--via zipper` restarts them from scratch.
+transfers abort. Re-running the same command picks the batch up again — `--via s3`
+resumes partially downloaded files, `--via http` restarts them from scratch.
 
 Collection ids are backend vocabulary. STAC (the default) uses product-level ids like
 `sentinel-1-grd` or `sentinel-2-l2a`; mission-level names like `SENTINEL-1` belong to
@@ -186,7 +186,7 @@ products = client.search(
 **Step 6 — Download.**
 
 ```python
-client.download(products, target="./data", via="zipper", concurrency=4)
+client.download(products, target="./data", via="http", concurrency=4)
 ```
 
 See [examples/python/](examples/python/) for ranged reads, S3 keys, error handling,
@@ -242,7 +242,7 @@ root. `eo config set` preserves file comments and layout.
 
 ```bash
 eo config set profiles.staging.platform https://staging.example.eu
-eo config set profiles.staging.zipper   https://zipper-canary.example.eu   # pin beats discovery
+eo config set profiles.staging.eodata_http https://download-canary.example.eu  # pin beats discovery
 eo config set default_profile staging
 ```
 
@@ -256,14 +256,14 @@ platform = "https://platform.example.eu"          # everything discovered from t
 
 [profiles.staging]
 platform = "https://staging.example.eu"
-zipper   = "https://zipper-canary.example.eu"      # pinned; rest discovered
+eodata_http = "https://download-canary.example.eu" # pinned; rest discovered
 
 [profiles.local]                                   # fully manual, no discovery
 catalogue_stac  = "http://localhost:8081/stac"
 catalogue_odata = "http://localhost:8081/odata"
-zipper          = "http://localhost:8082"
-exos_endpoint   = "http://localhost:9000"
-keys_manager    = "http://localhost:8083/api"
+eodata_http     = "http://localhost:8082"
+s3_endpoint     = "http://localhost:9000"
+s3_credentials  = "http://localhost:8083/api"
 keycloak        = "http://localhost:8180"
 keycloak_realm  = "eodata"
 ```
@@ -286,7 +286,7 @@ Env vars override the config files — good for CI and surgical, one-off overrid
 ```bash
 export EOSDK_PLATFORM=https://platform.example.eu   # platform root; endpoints discovered
 export EOSDK_PROFILE=staging                        # select a profile
-export EOSDK_ZIPPER_URL=http://localhost:8082       # override one endpoint only
+export EOSDK_EODATA_HTTP_URL=http://localhost:8082  # override one endpoint only
 ```
 
 Every endpoint has an `EOSDK_*_URL` variable (see
@@ -301,7 +301,7 @@ from eosdk import Client
 
 Client(platform="https://platform.example.eu")   # single-root bootstrap
 Client(profile="prod")                            # a saved profile
-Client(zipper="http://localhost:8082")            # pin one endpoint
+Client(eodata_http="http://localhost:8082")       # pin one endpoint
 ```
 
 ### Where the discovery document lives

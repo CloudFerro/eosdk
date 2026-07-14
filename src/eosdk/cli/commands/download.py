@@ -41,7 +41,7 @@ def download(
         typer.Argument(help="Product ids, or '-' to read `eo search --json` from stdin."),
     ] = None,
     output: Annotated[Path, typer.Option("--output", "-o", help="Target directory.")] = Path("."),
-    via: Annotated[str, typer.Option("--via", help="zipper | exos")] = "zipper",
+    via: Annotated[str, typer.Option("--via", help="http | s3")] = "http",
     concurrency: Annotated[int, typer.Option("--concurrency", "-c")] = 4,
     checksum: Annotated[
         bool, typer.Option("--checksum/--no-checksum", help="Verify checksums when available.")
@@ -56,7 +56,7 @@ def download(
         if ids == ["-"]:
             products = _products_from_stdin()
         else:
-            # Bare ids build minimal stubs; enough for the Zipper $value route.
+            # Bare ids build minimal stubs; enough for the HTTP $value route.
             products = [Product(id=pid, name=pid) for pid in ids]
 
         show_progress = not quiet and sys.stderr.isatty()
@@ -110,7 +110,7 @@ def download(
         except KeyboardInterrupt:
             resume_hint = (
                 "re-run the same command to resume"
-                if via == "exos"
+                if via == "s3"
                 else "re-run the same command to restart unfinished files"
             )
             stderr.print(

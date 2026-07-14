@@ -382,7 +382,7 @@ _PRODUCTS_UUID = re.compile(r"/Products\(([^)]+)\)")
 
 
 def _download_id(item: dict[str, Any]) -> str:
-    """Extract the identifier the Zipper download route needs.
+    """Extract the identifier the HTTP download route needs.
 
     On CDSE the product UUID lives in the ``Product`` asset's href
     (``https://download.../odata/v1/Products(<uuid>)/$value``) — verified

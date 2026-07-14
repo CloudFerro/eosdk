@@ -1,7 +1,7 @@
-"""Rate-limited ``/ready`` probes for eodata-backed services (Zipper, Exos).
+"""Rate-limited ``/ready`` probes for the eodata-backed data-access services.
 
-Zipper and Exos expose a ``/ready`` endpoint that reports whether the eodata
-store behind them is available. The endpoint must not be polled aggressively,
+The HTTP and S3 data-access services expose a ``/ready`` endpoint that reports
+whether the eodata store behind them is available. It must not be polled aggressively,
 so every verdict is persisted on disk and re-served for ``MIN_PROBE_INTERVAL``
 seconds — repeated ``eo doctor`` runs inside that window reuse the last
 verdict instead of issuing another request. Probes are also single-shot
@@ -119,10 +119,10 @@ class ReadinessProbe:
         try:
             response = transport.request("GET", url, service=service, retry=_NO_RETRY, **kwargs)
             verdict = response.is_success
-            state = "ready" if verdict else "not ready"
-            detail = f"eodata {state} (GET {url} -> HTTP {response.status_code})"
-        except EndpointUnreachable as exc:
-            return Readiness(False, str(exc))  # nothing answered: nothing to throttle
+            detail = "ready" if verdict else f"not ready (HTTP {response.status_code})"
+        except EndpointUnreachable:
+            # nothing answered: nothing to throttle
+            return Readiness(False, "not available (endpoint unreachable)")
         except QuotaExceeded as exc:  # 429: the strongest reason to record the verdict
             verdict, detail = False, str(exc)
         result = Readiness(verdict, detail)

@@ -30,8 +30,8 @@ eo search --collection sentinel-2-l2a \
 ## download
 
 ```bash
-eo download <uuid> [-o DIR] [--via zipper|exos] [-c N] [--no-checksum]
-eo search ... --json | eo download - --via exos -c 8
+eo download <uuid> [-o DIR] [--via http|s3] [-c N] [--no-checksum]
+eo search ... --json | eo download - --via s3 -c 8
 ```
 
 ## keys
@@ -51,7 +51,7 @@ eo discover [--refresh] [--json]  # the platform's service discovery document
 eo doctor [--json] [--force]      # ✓/✗/- health checks with hints
 ```
 
-Besides reachability, `eo doctor` asks Zipper and Exos whether the eodata
+Besides reachability, `eo doctor` asks the HTTP and S3 data-access services whether the eodata
 store behind them is available (their `/ready` endpoints). These probes are
 rate-limited: the verdict is kept on disk (`~/.config/eosdk/readiness`) and
 reused for 5 minutes, so repeated doctor runs — e.g. as a CI pre-flight —

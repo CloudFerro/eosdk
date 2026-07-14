@@ -3,7 +3,7 @@
 One Python SDK — and one CLI, `eo` — for Earth Observation platform services:
 
 - **Search** the catalogue over STAC or OData with one query model.
-- **Download** products via Zipper (HTTP) or Exos (S3) behind one interface,
+- **Download** products via HTTP or S3 behind one interface,
   with retries, checksums, progress, and resume where the backend supports it.
 - **Auth handled invisibly**: Keycloak JWT lifecycle and S3 key management are
   owned by the SDK; your code never touches raw credentials.
@@ -22,7 +22,7 @@ products = client.search(
 )
 
 client.auth.login("user", "pass")  # or: eo auth login (device flow)
-client.download(products, target="./data", via="zipper", concurrency=4)
+client.download(products, target="./data", via="http", concurrency=4)
 ```
 
 Searching public catalogues needs no login at all.
@@ -32,7 +32,7 @@ Searching public catalogues needs no login at all.
 | Concern | Module | CLI |
 |---|---|---|
 | Search | `eosdk.catalogue` (STAC + OData) | `eo search` |
-| Download / list / open | `eosdk.eodata` (Zipper + Exos) | `eo download` |
+| Download / list / open | `eosdk.eodata` (HTTP + S3) | `eo download` |
 | Auth & S3 keys | `eosdk.auth` | `eo auth`, `eo keys` |
 | Configuration | `eosdk.config` | `eo config` |
 | Service discovery | `eosdk.discovery` | `eo discover` |

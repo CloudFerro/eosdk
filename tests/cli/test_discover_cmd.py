@@ -30,7 +30,8 @@ class TestDiscover:
         respx.get(WELL_KNOWN).mock(return_value=httpx.Response(200, json=spec_document()))
         result = CliRunner().invoke(app, ["discover"], obj=platform_state(tmp_path))
         assert result.exit_code == 0, result.output
-        assert "zipper" in result.output
+        assert "data_access" in result.output
+        assert "http/odata" in result.output
         assert "resto" in result.output
         assert "deprecated" in result.output
         assert "2027-01-01" in result.output
@@ -43,12 +44,12 @@ class TestDiscover:
         state = platform_state(tmp_path)
         config = tmp_path / "config.toml"
         config.write_text(
-            config.read_text() + '[profiles.example-eu]\nzipper = "https://mine.example.eu"\n'
+            config.read_text() + '[profiles.example-eu]\neodata_http = "https://mine.example.eu"\n'
         )
         result = CliRunner().invoke(app, ["discover"], obj=state)
         assert result.exit_code == 0, result.output
         assert "not discovery-managed" in result.output
-        assert 'zipper = "https://mine.example.eu"' in config.read_text()
+        assert 'eodata_http = "https://mine.example.eu"' in config.read_text()
 
     @respx.mock
     def test_json_output(self, tmp_path: Path) -> None:
@@ -93,7 +94,7 @@ class TestDoctorDiscoverySection:
     @respx.mock
     def test_bad_api_version_fails_doctor(self, tmp_path: Path) -> None:
         document = spec_document()
-        document["services"]["zipper"]["odata"]["api_version"] = "v9"
+        document["services"]["data_access"]["http"]["odata"]["api_version"] = "v9"
         respx.get(WELL_KNOWN).mock(return_value=httpx.Response(200, json=document))
         result = CliRunner().invoke(app, ["doctor", "--json"], obj=platform_state(tmp_path))
         assert result.exit_code == 1

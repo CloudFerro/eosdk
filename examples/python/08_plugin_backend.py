@@ -128,9 +128,9 @@ class StaticCatalogue:
 # -- 3. the specs a plugin package exports via its entry points ----------------------
 
 DOWNLOADER_PLUGIN = PluginSpec(
-    name="localfs",                     # the value users pass as via="localfs"
+    name="localfs",  # the value users pass as via="localfs"
     kind="downloader",
-    factory=LocalFsDownloader,          # called lazily with (client)
+    factory=LocalFsDownloader,  # called lazily with (client)
     strategies=(
         # Declares what the backend can do; client.open(..., via="localfs")
         # is rejected up-front because OPEN is not in this set.
@@ -139,7 +139,7 @@ DOWNLOADER_PLUGIN = PluginSpec(
 )
 
 CATALOGUE_PLUGIN = PluginSpec(
-    name="static",                      # the value users pass as protocol="static"
+    name="static",  # the value users pass as protocol="static"
     kind="catalogue",
     factory=StaticCatalogue,
 )

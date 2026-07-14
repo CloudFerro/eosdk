@@ -1,4 +1,4 @@
-"""Exos S3 download backend (SPEC §6.6): download + list + open.
+"""S3 download backend (SPEC §6.6): download + list + open.
 
 - ``fetch``: ranged multipart GETs with resume (sidecar state, ETag-validated;
   a changed object always restarts — ranges are never spliced across versions).
@@ -43,8 +43,8 @@ DEFAULT_PART_SIZE = 16 * 2**20  # 16 MiB
 KEY_LABEL = "eosdk"
 
 
-class ExosDownloader:
-    backend: ClassVar[str] = "exos"
+class S3Downloader:
+    backend: ClassVar[str] = "s3"
     supports_resume: ClassVar[bool] = True
 
     def __init__(
@@ -103,7 +103,7 @@ class ExosDownloader:
             raise DownloadError(
                 "product has no S3 path; was it found via the catalogue?",
                 product_id=product.id,
-                backend="exos",
+                backend="s3",
             )
         trimmed = s3_path.removeprefix("s3://").lstrip("/")
         bucket, _, prefix = trimmed.partition("/")

@@ -1,6 +1,6 @@
-"""A realistic (miniature) SAFE product tree, shared by Exos and Zipper tests.
+"""A realistic (miniature) SAFE product tree, shared by the S3 and HTTP tests.
 
-The same logical structure feeds moto-seeded S3 buckets and Zipper Nodes
+The same logical structure feeds moto-seeded S3 buckets and download-service Nodes
 fixtures, so the cross-backend parity test compares like with like.
 """
 

@@ -34,7 +34,7 @@ def create(
         provider = client.keys
         credentials = provider.get_or_create(label) if label else provider.create()
         if export:
-            endpoint = client.config.endpoints.exos_endpoint
+            endpoint = client.config.endpoints.s3_endpoint
             print(f"AWS_ACCESS_KEY_ID={credentials.access_key}")
             print(f"AWS_SECRET_ACCESS_KEY={credentials.require_secret()}")
             if endpoint:

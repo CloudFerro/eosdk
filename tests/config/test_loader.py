@@ -23,7 +23,7 @@ def write(path: Path, content: str) -> Path:
 def local_toml(tmp_path: Path) -> Path:
     return write(
         tmp_path / "cwd" / "eosdk.toml",
-        f'default_profile = "dev"\n[profiles.dev]\nzipper = "{LOCAL_URL}"\n',
+        f'default_profile = "dev"\n[profiles.dev]\neodata_http = "{LOCAL_URL}"\n',
     )
 
 
@@ -31,8 +31,8 @@ def local_toml(tmp_path: Path) -> Path:
 def user_toml(tmp_path: Path) -> Path:
     return write(
         tmp_path / "home" / "config.toml",
-        f'default_profile = "dev"\n[profiles.dev]\nzipper = "{USER_URL}"\n'
-        f'[profiles.other]\nzipper = "https://other.example.eu"\n',
+        f'default_profile = "dev"\n[profiles.dev]\neodata_http = "{USER_URL}"\n'
+        f'[profiles.other]\neodata_http = "https://other.example.eu"\n',
     )
 
 
@@ -46,41 +46,41 @@ class TestPrecedenceMatrix:
 
     def test_kwargs_beat_env(self, tmp_path: Path, missing: Path) -> None:
         cfg = load(
-            kwargs_endpoints={"zipper": KW_URL},
-            env={"EOSDK_ZIPPER_URL": ENV_URL},
+            kwargs_endpoints={"eodata_http": KW_URL},
+            env={"EOSDK_EODATA_HTTP_URL": ENV_URL},
             cwd=tmp_path,
             user_config=missing,
         )
-        assert cfg.endpoints.zipper == KW_URL
-        assert cfg.sources["zipper"].source == "kwargs"
+        assert cfg.endpoints.eodata_http == KW_URL
+        assert cfg.sources["eodata_http"].source == "kwargs"
 
     def test_env_beats_local_file(self, local_toml: Path, missing: Path) -> None:
         cfg = load(
-            env={"EOSDK_ZIPPER_URL": ENV_URL},
+            env={"EOSDK_EODATA_HTTP_URL": ENV_URL},
             cwd=local_toml.parent,
             user_config=missing,
         )
-        assert cfg.endpoints.zipper == ENV_URL
-        assert cfg.sources["zipper"].source == "env:EOSDK_ZIPPER_URL"
+        assert cfg.endpoints.eodata_http == ENV_URL
+        assert cfg.sources["eodata_http"].source == "env:EOSDK_EODATA_HTTP_URL"
 
     def test_local_file_beats_user_file(self, local_toml: Path, user_toml: Path) -> None:
         cfg = load(env={}, cwd=local_toml.parent, user_config=user_toml)
-        assert cfg.endpoints.zipper == LOCAL_URL
-        assert cfg.sources["zipper"].source == f"profile:dev({local_toml})"
+        assert cfg.endpoints.eodata_http == LOCAL_URL
+        assert cfg.sources["eodata_http"].source == f"profile:dev({local_toml})"
 
     def test_user_file_beats_default(self, tmp_path: Path, user_toml: Path) -> None:
         cfg = load(env={}, cwd=tmp_path, user_config=user_toml)
-        assert cfg.endpoints.zipper == USER_URL
-        assert cfg.sources["zipper"].source == f"profile:dev({user_toml})"
+        assert cfg.endpoints.eodata_http == USER_URL
+        assert cfg.sources["eodata_http"].source == f"profile:dev({user_toml})"
 
     def test_all_layers_present_kwargs_win(self, local_toml: Path, user_toml: Path) -> None:
         cfg = load(
-            kwargs_endpoints={"zipper": KW_URL},
-            env={"EOSDK_ZIPPER_URL": ENV_URL},
+            kwargs_endpoints={"eodata_http": KW_URL},
+            env={"EOSDK_EODATA_HTTP_URL": ENV_URL},
             cwd=local_toml.parent,
             user_config=user_toml,
         )
-        assert cfg.endpoints.zipper == KW_URL
+        assert cfg.endpoints.eodata_http == KW_URL
 
     def test_unpinned_field_falls_to_default(self, tmp_path: Path, missing: Path) -> None:
         cfg = load(env={}, cwd=tmp_path, user_config=missing)
@@ -97,7 +97,7 @@ class TestProfileSelection:
             user_config=user_toml,
         )
         assert cfg.profile == "other"
-        assert cfg.endpoints.zipper == "https://other.example.eu"
+        assert cfg.endpoints.eodata_http == "https://other.example.eu"
 
     def test_env_profile_beats_default_profile(self, user_toml: Path, tmp_path: Path) -> None:
         cfg = load(env={"EOSDK_PROFILE": "other"}, cwd=tmp_path, user_config=user_toml)
@@ -121,41 +121,41 @@ class TestDiscoveryPending:
         cfg = load(env={}, cwd=local.parent, user_config=missing)
         assert cfg.platform == "https://platform.example.eu"
         resolved = cfg.resolved()
-        assert resolved["zipper"].source == "discovery"
-        assert resolved["zipper"].display == PENDING
-        assert cfg.endpoints.zipper is None
+        assert resolved["eodata_http"].source == "discovery"
+        assert resolved["eodata_http"].display == PENDING
+        assert cfg.endpoints.eodata_http is None
 
     def test_pinned_field_beats_discovery(self, tmp_path: Path, missing: Path) -> None:
         local = write(
             tmp_path / "eosdk.toml",
             'default_profile = "staging"\n[profiles.staging]\n'
             'platform = "https://staging.example.eu"\n'
-            f'zipper = "{LOCAL_URL}"\n',
+            f'eodata_http = "{LOCAL_URL}"\n',
         )
         cfg = load(env={}, cwd=local.parent, user_config=missing)
-        assert cfg.endpoints.zipper == LOCAL_URL
+        assert cfg.endpoints.eodata_http == LOCAL_URL
         assert cfg.resolved()["catalogue_stac"].display == PENDING
 
     def test_platform_kwarg_bootstrap(self, tmp_path: Path, missing: Path) -> None:
         cfg = load(platform="https://p.example.eu", env={}, cwd=tmp_path, user_config=missing)
         assert cfg.platform == "https://p.example.eu"
-        assert cfg.resolved()["zipper"].source == "discovery"
+        assert cfg.resolved()["eodata_http"].source == "discovery"
 
     def test_require_pending_raises_with_pin_hint(self, tmp_path: Path, missing: Path) -> None:
         cfg = load(platform="https://p.example.eu", env={}, cwd=tmp_path, user_config=missing)
-        with pytest.raises(ConfigError, match="EOSDK_ZIPPER_URL"):
-            cfg.require("zipper", service="zipper")
+        with pytest.raises(ConfigError, match="EOSDK_EODATA_HTTP_URL"):
+            cfg.require("eodata_http", service="eodata_http")
 
     def test_require_unset_raises_with_pin_hint(self, tmp_path: Path, missing: Path) -> None:
         cfg = load(env={}, cwd=tmp_path, user_config=missing)
-        with pytest.raises(ConfigError, match="EOSDK_ZIPPER_URL"):
-            cfg.require("zipper", service="zipper")
+        with pytest.raises(ConfigError, match="EOSDK_EODATA_HTTP_URL"):
+            cfg.require("eodata_http", service="eodata_http")
 
 
 class TestValidation:
     def test_bad_env_url_names_env_var(self, tmp_path: Path, missing: Path) -> None:
-        with pytest.raises(ConfigError, match="EOSDK_ZIPPER_URL"):
-            load(env={"EOSDK_ZIPPER_URL": "not a url"}, cwd=tmp_path, user_config=missing)
+        with pytest.raises(ConfigError, match="EOSDK_EODATA_HTTP_URL"):
+            load(env={"EOSDK_EODATA_HTTP_URL": "not a url"}, cwd=tmp_path, user_config=missing)
 
     def test_malformed_toml_names_file(self, tmp_path: Path, missing: Path) -> None:
         write(tmp_path / "eosdk.toml", "definitely [not toml")

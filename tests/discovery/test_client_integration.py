@@ -50,7 +50,7 @@ class TestSingleRootBootstrap:
         ) as client:
             resolved = client.config.resolved()
         assert route.call_count == 0  # SPEC §6.1: construction is offline
-        assert resolved["zipper"].display == PENDING
+        assert resolved["eodata_http"].display == PENDING
 
     @respx.mock
     def test_first_use_resolves_pending_endpoints(self, client: Client) -> None:
@@ -59,8 +59,8 @@ class TestSingleRootBootstrap:
         assert route.call_count == 1
         assert keycloak_url == "https://auth.example.eu"
         resolved = client.config.resolved()
-        assert resolved["zipper"].value == "https://zipper.example.eu/odata"
-        assert resolved["zipper"].source == "discovery"
+        assert resolved["eodata_http"].value == "https://download.example.eu/odata"
+        assert resolved["eodata_http"].source == "discovery"
         assert resolved["keycloak_realm"].value == "eodata"
 
     @respx.mock
@@ -87,26 +87,26 @@ class TestSingleRootBootstrap:
             'default_profile = "staging"\n'
             "[profiles.staging]\n"
             f'platform = "{PLATFORM}"\n'
-            'zipper = "https://zipper-canary.example.eu"\n'
+            'eodata_http = "https://download-canary.example.eu"\n'
         )
         with Client(
             cwd=tmp_path,
             user_config=tmp_path / "missing.toml",
             discovery_cache_dir=tmp_path / "discovery",
         ) as client:
-            zipper = client._endpoint("zipper", service="zipper")
-            assert zipper == "https://zipper-canary.example.eu"  # pin beats discovery
+            pinned = client._endpoint("eodata_http", service="eodata_http")
+            assert pinned == "https://download-canary.example.eu"  # pin beats discovery
             stac = client._endpoint("catalogue_stac", service="catalogue_stac")
             assert stac == "https://catalogue.example.eu/stac"  # sibling discovered
             resolved = client.config.resolved()
-            assert resolved["zipper"].source.startswith("profile:staging")
+            assert resolved["eodata_http"].source.startswith("profile:staging")
             assert resolved["catalogue_stac"].source == "discovery"
 
     @respx.mock
     def test_discovery_services_and_refresh(self, client: Client) -> None:
         route = mock_platform()
         services = client.discovery.services()
-        assert "zipper" in services
+        assert "data_access" in services
         client.discovery.refresh()
         assert route.call_count == 2
 
@@ -132,7 +132,7 @@ class TestPlatformSnapshot:
         assert profile.platform == PLATFORM
         assert profile.discovered_from == WELL_KNOWN
         assert profile.description == "Example Earth-observation data platform (example.eu)"
-        assert profile.zipper == "https://zipper.example.eu/odata"
+        assert profile.eodata_http == "https://download.example.eu/odata"
         assert profile.keycloak == "https://auth.example.eu"
 
     @respx.mock
@@ -155,7 +155,7 @@ class TestPlatformSnapshot:
     def test_user_owned_profile_conflict_left_untouched(self, tmp_path: Path) -> None:
         mock_platform()
         user_config = tmp_path / "config.toml"
-        original = '[profiles.example-eu]\nzipper = "https://my-canary.example.eu"\n'
+        original = '[profiles.example-eu]\neodata_http = "https://my-canary.example.eu"\n'
         user_config.write_text(original)
         with Client(
             platform=PLATFORM,
@@ -182,12 +182,14 @@ class TestPlatformSnapshot:
             client.discovery.document()
             assert client.discovered_profile == ("example-eu", "created")
             changed = spec_document()
-            changed["services"]["keys_manager"]["url"] = "https://keys-v2.example.eu/api"
+            changed["services"]["data_access"]["s3"]["credentials"]["url"] = (
+                "https://keys-v2.example.eu/api"
+            )
             route.mock(return_value=httpx.Response(200, json=changed))
             client.discovery.refresh()
             assert client.discovered_profile == ("example-eu", "updated")
         profile = _load_config_file(user_config).profiles["example-eu"]
-        assert profile.keys_manager == "https://keys-v2.example.eu/api"
+        assert profile.s3_credentials == "https://keys-v2.example.eu/api"
 
     @respx.mock
     def test_persistence_failure_does_not_break_the_call(self, tmp_path: Path) -> None:
@@ -206,26 +208,26 @@ class TestPlatformSnapshot:
 
 class TestVersionGuard:
     @respx.mock
-    def test_advertised_v3_fails_before_any_zipper_call(self, client: Client) -> None:
+    def test_advertised_v3_fails_before_any_download_call(self, client: Client) -> None:
         document = spec_document()
-        document["services"]["zipper"]["odata"]["api_version"] = "v3"
+        document["services"]["data_access"]["http"]["odata"]["api_version"] = "v3"
         mock_platform(document)
-        zipper_route = respx.get(url__startswith="https://zipper.example.eu")
+        download_route = respx.get(url__startswith="https://download.example.eu")
         with pytest.raises(UnsupportedApiVersion) as exc_info:
-            client.download(Product(id="x", name="X"), target=".", via="zipper")
+            client.download(Product(id="x", name="X"), target=".", via="http")
         message = str(exc_info.value)
         assert "v3" in message
         assert "v1" in message
-        assert "EOSDK_ZIPPER_URL" in message
-        assert zipper_route.call_count == 0  # failed early, never mid-download
+        assert "EOSDK_EODATA_HTTP_URL" in message
+        assert download_route.call_count == 0  # failed early, never mid-download
 
     @respx.mock
     def test_absent_api_version_uses_default(self, client: Client) -> None:
         document = spec_document()
-        del document["services"]["zipper"]["odata"]["api_version"]
+        del document["services"]["data_access"]["http"]["odata"]["api_version"]
         mock_platform(document)
         # strategy selection + version guard pass; construction succeeds
-        downloader = client._zipper_downloader()
+        downloader = client._http_downloader()
         assert downloader is not None
 
 
@@ -234,7 +236,7 @@ class TestStrategySelection:
     def test_current_strategy_silent(self, client: Client, recwarn: Any) -> None:
         mock_platform()
         client._downloader(
-            "zipper", __import__("eosdk.eodata.capabilities", fromlist=["C"]).Capability.DOWNLOAD
+            "http", __import__("eosdk.eodata.capabilities", fromlist=["C"]).Capability.DOWNLOAD
         )
         deprecations = [w for w in recwarn.list if w.category is DeprecationWarning]
         assert not deprecations  # odata chosen; resto never warned about
@@ -244,14 +246,14 @@ class TestStrategySelection:
         from eosdk.eodata.capabilities import Capability
 
         document = spec_document()
-        del document["services"]["zipper"]["odata"]
+        del document["services"]["data_access"]["http"]["odata"]
         mock_platform(document)
         with (
             pytest.warns(DeprecationWarning, match="2027-01-01") as record,
             # resto is selected (valid for download) but not implemented yet
             pytest.raises(NotImplementedError),
         ):
-            client._downloader("zipper", Capability.DOWNLOAD)
+            client._downloader("http", Capability.DOWNLOAD)
         assert "odata" in str(record[0].message)
 
     @respx.mock
@@ -259,18 +261,18 @@ class TestStrategySelection:
         from eosdk.eodata.capabilities import Capability
 
         document = spec_document()
-        del document["services"]["zipper"]["odata"]
+        del document["services"]["data_access"]["http"]["odata"]
         mock_platform(document)
         with pytest.raises(UnsupportedCapability, match="list"):
-            client._downloader("zipper", Capability.LIST)
+            client._downloader("http", Capability.LIST)
 
     @respx.mock
     def test_capability_disabled_by_deployment(self, client: Client) -> None:
         document = spec_document()
-        document["services"]["zipper"]["odata"]["capabilities"] = ["download"]
+        document["services"]["data_access"]["http"]["odata"]["capabilities"] = ["download"]
         mock_platform(document)
         with pytest.raises(UnsupportedCapability, match="list"):
-            client.list(Product(id="x", name="X"), via="zipper")
+            client.list(Product(id="x", name="X"), via="http")
 
 
 class TestOidcFixtureAlignment:

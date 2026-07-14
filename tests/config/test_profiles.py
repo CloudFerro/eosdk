@@ -12,7 +12,7 @@ VALUES = {
     "platform": "https://platform.example.eu",
     "description": "Example platform",
     "catalogue_stac": "https://catalogue.example.eu/stac",
-    "zipper": "https://zipper.example.eu/odata",
+    "eodata_http": "https://download.example.eu/odata",
 }
 
 
@@ -30,7 +30,7 @@ class TestSaveDiscoveredProfile:
         profile = _load_config_file(config).profiles["example-eu"]
         assert profile.platform == "https://platform.example.eu"
         assert profile.description == "Example platform"
-        assert profile.zipper == "https://zipper.example.eu/odata"
+        assert profile.eodata_http == "https://download.example.eu/odata"
         assert profile.discovered_from == DISCOVERY_URL
 
     def test_becomes_default_only_when_none_set(self, config: Path) -> None:
@@ -38,7 +38,9 @@ class TestSaveDiscoveredProfile:
         assert get_default_profile(config) == "example-eu"
 
     def test_existing_default_untouched(self, config: Path) -> None:
-        config.write_text('default_profile = "mine"\n[profiles.mine]\nzipper = "https://z.eu"\n')
+        config.write_text(
+            'default_profile = "mine"\n[profiles.mine]\neodata_http = "https://z.eu"\n'
+        )
         save_discovered_profile(config, "example-eu", values=VALUES, discovered_from=DISCOVERY_URL)
         assert get_default_profile(config) == "mine"
 
@@ -53,24 +55,24 @@ class TestSaveDiscoveredProfile:
 
     def test_changed_document_resyncs_managed_profile(self, config: Path) -> None:
         save_discovered_profile(config, "example-eu", values=VALUES, discovered_from=DISCOVERY_URL)
-        moved = dict(VALUES, zipper="https://zipper-v2.example.eu/odata")
+        moved = dict(VALUES, eodata_http="https://download-v2.example.eu/odata")
         del moved["catalogue_stac"]  # service withdrawn online
         status = save_discovered_profile(
             config, "example-eu", values=moved, discovered_from=DISCOVERY_URL
         )
         assert status == "updated"
         profile = _load_config_file(config).profiles["example-eu"]
-        assert profile.zipper == "https://zipper-v2.example.eu/odata"
+        assert profile.eodata_http == "https://download-v2.example.eu/odata"
         assert profile.catalogue_stac is None  # mirror resyncs wholesale
 
     def test_user_owned_profile_is_a_conflict(self, config: Path) -> None:
-        config.write_text('[profiles.example-eu]\nzipper = "https://my-canary.example.eu"\n')
+        config.write_text('[profiles.example-eu]\neodata_http = "https://my-canary.example.eu"\n')
         status = save_discovered_profile(
             config, "example-eu", values=VALUES, discovered_from=DISCOVERY_URL
         )
         assert status == "conflict"
         profile = _load_config_file(config).profiles["example-eu"]
-        assert profile.zipper == "https://my-canary.example.eu"  # untouched
+        assert profile.eodata_http == "https://my-canary.example.eu"  # untouched
         assert profile.discovered_from is None
 
     def test_sibling_profiles_and_comments_survive(self, config: Path) -> None:
@@ -78,7 +80,7 @@ class TestSaveDiscoveredProfile:
             "# my hand-written config\n"
             'default_profile = "mine"\n'
             "[profiles.mine]\n"
-            'zipper = "https://z.eu"\n'
+            'eodata_http = "https://z.eu"\n'
         )
         save_discovered_profile(config, "example-eu", values=VALUES, discovered_from=DISCOVERY_URL)
         text = config.read_text()

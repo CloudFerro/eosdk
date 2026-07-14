@@ -4,7 +4,7 @@ Usage:
     EOSDK_SMOKE_USERNAME=... EOSDK_SMOKE_PASSWORD=... \
         uv run python benchmarks/bench_download.py [--collection sentinel-2-l2a]
 
-Measures wall time and throughput for {zipper, exos} x {1, 4, 8} concurrency
+Measures wall time and throughput for {http, s3} x {1, 2, 4, 8, 10} concurrency
 over a small batch of products. Record results in benchmarks/RESULTS.md and
 tune part_size / max_ranges_per_file / default concurrency from them.
 """
@@ -25,8 +25,8 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--collection", default="sentinel-2-l2a")
     parser.add_argument("--products", type=int, default=2)
-    parser.add_argument("--concurrency", type=int, nargs="*", default=[1, 4])
-    parser.add_argument("--via", nargs="*", default=["zipper", "exos"])
+    parser.add_argument("--concurrency", type=int, nargs="*", default=[1, 2, 4, 8, 10])
+    parser.add_argument("--via", nargs="*", default=["http", "s3"])
     args = parser.parse_args()
 
     username = os.environ.get("EOSDK_SMOKE_USERNAME")

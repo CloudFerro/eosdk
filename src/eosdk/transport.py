@@ -99,7 +99,7 @@ class Transport:
     """Sync HTTP transport shared by all domain modules.
 
     ``auth`` is passed per request, never client-wide: different services carry
-    different credential providers, and the Exos/S3 path must never see JWTs.
+    different credential providers, and the S3 path must never see JWTs.
     """
 
     timeout: float = 30.0

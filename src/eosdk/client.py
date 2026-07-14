@@ -32,8 +32,8 @@ if TYPE_CHECKING:
     from eosdk.discovery.resolver import DiscoveryResolver
     from eosdk.eodata.base import DownloadReport, ProgressEvent
     from eosdk.eodata.capabilities import Capability
-    from eosdk.eodata.exos import ExosDownloader
-    from eosdk.eodata.zipper import ZipperDownloader
+    from eosdk.eodata.http import HttpDownloader
+    from eosdk.eodata.s3 import S3Downloader
     from eosdk.models import Collection, Node, Product, Queryable, SearchResult
 
 logger = logging.getLogger(__name__)
@@ -77,8 +77,8 @@ class Client:
         self._auth: KeycloakAuth | None = None
         self._stac: StacCatalogue | None = None
         self._odata: ODataCatalogue | None = None
-        self._zipper: ZipperDownloader | None = None
-        self._exos: ExosDownloader | None = None
+        self._http: HttpDownloader | None = None
+        self._s3: S3Downloader | None = None
         self._keys: S3KeysProvider | None = None
 
     # -- discovery (SPEC §6.2): fetched lazily on first pending-endpoint use ---
@@ -205,46 +205,46 @@ class Client:
             )
         return self._odata
 
-    def _zipper_downloader(self, strategy: str | None = None) -> ZipperDownloader:
-        if self._zipper is None:
-            from eosdk.eodata.zipper import ZipperDownloader
+    def _http_downloader(self, strategy: str | None = None) -> HttpDownloader:
+        if self._http is None:
+            from eosdk.eodata.http import HttpDownloader
 
-            self._check_api_version("zipper/odata")
-            self._zipper = ZipperDownloader(
-                self._endpoint("zipper", service="zipper"),
+            self._check_api_version("data_access/http/odata")
+            self._http = HttpDownloader(
+                self._endpoint("eodata_http", service="eodata_http"),
                 transport=self._transport,
                 auth=self.auth,
                 strategy=strategy,
             )
-        return self._zipper
+        return self._http
 
     def _keys_provider(self) -> S3KeysProvider:
         if self._keys is None:
             from eosdk.auth.s3_keys import S3KeysProvider
 
-            self._check_api_version("keys_manager")
+            self._check_api_version("data_access/s3/credentials")
 
             self._keys = S3KeysProvider(
                 auth=self.auth,
-                base_url=self._endpoint("keys_manager", service="keys_manager"),
+                base_url=self._endpoint("s3_credentials", service="s3_credentials"),
                 transport=self._transport,
                 profile=self.config.profile or "default",
                 cache_dir=self._keys_cache_dir,
             )
         return self._keys
 
-    def _exos_downloader(self) -> ExosDownloader:
-        # Lazy on purpose: S3 keys must not be minted until first Exos use.
-        if self._exos is None:
-            from eosdk.eodata.exos import ExosDownloader
+    def _s3_downloader(self) -> S3Downloader:
+        # Lazy on purpose: S3 keys must not be minted until first S3 use.
+        if self._s3 is None:
+            from eosdk.eodata.s3 import S3Downloader
 
-            self._exos = ExosDownloader(
-                self._endpoint("exos_endpoint", service="exos"),
-                region=self.config.endpoints.exos_region,
+            self._s3 = S3Downloader(
+                self._endpoint("s3_endpoint", service="s3"),
+                region=self.config.endpoints.s3_region,
                 credentials=self._keys_provider(),
                 verify=self.config.verify_tls,
             )
-        return self._exos
+        return self._s3
 
     # -- public surface (SPEC §7.1) ---------------------------------------------
 
@@ -280,9 +280,9 @@ class Client:
             self.discovery.strategies_for(via) if self.discovery.configured else BUILTIN_MATRIX[via]
         )
         chosen = select_strategy(via, capability, strategies)
-        if via == "zipper":
-            return self._zipper_downloader(strategy=chosen.name)
-        return self._exos_downloader()
+        if via == "http":
+            return self._http_downloader(strategy=chosen.name)
+        return self._s3_downloader()
 
     def search(
         self,
@@ -325,7 +325,7 @@ class Client:
         products: Product | Iterable[Product],
         target: Path | str,
         *,
-        via: str = "zipper",
+        via: str = "http",
         concurrency: int = 4,
         resume: bool = True,
         checksum: bool = True,
@@ -344,7 +344,7 @@ class Client:
         )
 
     def list(
-        self, product: Product, path: str = "", *, via: str = "zipper", recursive: bool = False
+        self, product: Product, path: str = "", *, via: str = "http", recursive: bool = False
     ) -> list[Node]:
         """Files inside a product (SPEC §6.6 Listable)."""
         from eosdk.eodata.capabilities import Capability
@@ -352,7 +352,7 @@ class Client:
         backend = self._downloader(via, Capability.LIST)
         return backend.list(product, path, recursive=recursive)  # type: ignore[no-any-return]
 
-    def open(self, product: Product, path: str, *, via: str = "exos") -> IO[bytes]:
+    def open(self, product: Product, path: str, *, via: str = "s3") -> IO[bytes]:
         """Ranged reads of one file inside a product (SPEC §6.6 RandomAccess)."""
         from eosdk.eodata.capabilities import Capability
 
@@ -361,7 +361,7 @@ class Client:
 
     @property
     def keys(self) -> S3KeysProvider:
-        """The S3 Keys Manager client (SPEC §6.4)."""
+        """The S3 credentials (keys) client (SPEC §6.4)."""
         return self._keys_provider()
 
     def close(self) -> None:

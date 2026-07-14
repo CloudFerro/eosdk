@@ -195,7 +195,7 @@ def _entry_to_product(entry: dict[str, Any]) -> Product:
     if isinstance(footprint, dict):
         geometry = footprint
 
-    # Exos identifier: prefer S3Path, fall back to Locations (risk: field name
+    # S3 identifier: prefer S3Path, fall back to Locations (risk: field name
     # varies per deployment — normalize whichever staging returns).
     s3_path = entry.get("S3Path")
     if not s3_path:

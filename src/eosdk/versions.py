@@ -12,16 +12,16 @@ from eosdk.exceptions import UnsupportedApiVersion
 
 # service key (matching discovery api_versions keys) -> (supported, default)
 SUPPORTED_VERSIONS: dict[str, tuple[frozenset[str], str]] = {
-    "zipper/odata": (frozenset({"v1"}), "v1"),
+    "data_access/http/odata": (frozenset({"v1"}), "v1"),
     "catalogue/odata": (frozenset({"v1"}), "v1"),
-    "keys_manager": (frozenset({"v1"}), "v1"),
+    "data_access/s3/credentials": (frozenset({"v1"}), "v1"),
 }
 
 # discovery key -> the env var that pins the endpoint manually
 _PIN_HINTS = {
-    "zipper/odata": "EOSDK_ZIPPER_URL",
+    "data_access/http/odata": "EOSDK_EODATA_HTTP_URL",
     "catalogue/odata": "EOSDK_CATALOGUE_ODATA_URL",
-    "keys_manager": "EOSDK_KEYS_MANAGER_URL",
+    "data_access/s3/credentials": "EOSDK_S3_CREDENTIALS_URL",
 }
 
 

@@ -3,7 +3,7 @@
 Endpoints resolve per field, most specific wins:
 
 1. explicit kwargs to `Client(...)`
-2. environment variables `EOSDK_*` (e.g. `EOSDK_ZIPPER_URL`, `EOSDK_PROFILE`)
+2. environment variables `EOSDK_*` (e.g. `EOSDK_EODATA_HTTP_URL`, `EOSDK_PROFILE`)
 3. project-local `./eosdk.toml`
 4. user config `~/.config/eosdk/config.toml` (selected profile)
 5. remote discovery document (when a `platform` root is configured)
@@ -23,19 +23,19 @@ platform = "https://platform.example.eu"     # single root; rest discovered
 
 [profiles.staging]
 platform = "https://staging.example.eu"
-zipper   = "https://zipper-canary.example.eu" # pinned; pins beat discovery
+eodata_http = "https://download-canary.example.eu" # pinned; pins beat discovery
 
 [profiles.local]                              # fully manual
 catalogue_stac  = "http://localhost:8081/stac"
 catalogue_odata = "http://localhost:8081/odata"
-zipper          = "http://localhost:8082"
-exos_endpoint   = "http://localhost:9000"
-keys_manager    = "http://localhost:8083/api"
+eodata_http     = "http://localhost:8082"
+s3_endpoint     = "http://localhost:9000"
+s3_credentials  = "http://localhost:8083/api"
 keycloak        = "http://localhost:8180"
 keycloak_realm  = "eodata"
 ```
 
-Manage from the CLI: `eo config init`, `eo config set profiles.staging.zipper
+Manage from the CLI: `eo config init`, `eo config set profiles.staging.eodata_http
 https://...`, `eo config use staging`, `eo config profiles`. Writes preserve
 comments and layout.
 
@@ -46,8 +46,8 @@ comments and layout.
 | `EOSDK_PROFILE` | profile to use |
 | `EOSDK_PLATFORM` | platform root for discovery |
 | `EOSDK_CATALOGUE_STAC_URL`, `EOSDK_CATALOGUE_ODATA_URL` | catalogue bases |
-| `EOSDK_ZIPPER_URL`, `EOSDK_EXOS_ENDPOINT`, `EOSDK_EXOS_REGION` | data access |
-| `EOSDK_KEYS_MANAGER_URL` | S3 keys manager base |
+| `EOSDK_EODATA_HTTP_URL`, `EOSDK_S3_ENDPOINT`, `EOSDK_S3_REGION` | data access |
+| `EOSDK_S3_CREDENTIALS_URL` | S3 credentials service base |
 | `EOSDK_KEYCLOAK_URL`, `EOSDK_KEYCLOAK_REALM`, `EOSDK_KEYCLOAK_CLIENT_ID` | auth |
 | `EOSDK_DISCOVERY_URL` | explicit discovery document URL |
 | `EOSDK_TLS_VERIFY` | set `0` to disable TLS verification (dev only) |

@@ -33,6 +33,12 @@
   (strategy column shows `http/odata`, `s3/credentials`, ...).
 
 ### Added
+- `eo search --format table|json|id|s3`: `id` prints one product uuid per
+  line (feeds `eo download` arguments directly, no `jq` needed), `s3` prints
+  one S3 path per line for `eo download --via s3` or external S3 tooling.
+  `--json` stays as shorthand for `--format json`.
+- `eo download` accepts S3 paths (`s3://…` or `/eodata/…`) as arguments with
+  `--via s3`, alongside bare product uuids.
 - Discovery document `platform` block (optional): `name` + `description`
   identify the deployment. On document load the SDK saves the whole projected
   online configuration as a profile named after the platform, marked

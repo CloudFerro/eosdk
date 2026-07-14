@@ -39,10 +39,19 @@ eo search --collection sentinel-2-l2a --from 2026-06-01 --to 2026-06-08 \
   | jq -s 'sort_by(-.size) | .[:2] | .[]' -c \
   | eo download - --output ./data
 
-# -- 4. download by bare product id (no prior search needed) ----------------------
-# eo download 5b9f4d4e-... c2a7de3f-... --output ./data
+# -- 4. extract just the uuids or S3 paths with --format ---------------------------
+# One uuid per line — feeds straight into `eo download` arguments:
+# eo download $(eo search --collection sentinel-2-l2a --from 2026-06-01 \
+#                         --to 2026-06-08 --limit 2 --format id) --output ./data
+#
+# One S3 path per line — for `eo download --via s3` or external S3 tooling:
+# eo download $(eo search ... --format s3) --via s3 --output ./data
 
-# -- 5. useful switches ------------------------------------------------------------
+# -- 5. download by bare product id or S3 path (no prior search needed) ------------
+# eo download 5b9f4d4e-... c2a7de3f-... --output ./data
+# eo download s3://eodata/Sentinel-2/.../S2B_...SAFE --via s3 --output ./data
+
+# -- 6. useful switches ------------------------------------------------------------
 # --via s3            S3 backend (resumable; S3 keys minted automatically)
 # --no-checksum       skip checksum verification
 # --quiet             no progress bars (progress goes to stderr, so pipes are

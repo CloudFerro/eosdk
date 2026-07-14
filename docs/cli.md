@@ -27,11 +27,17 @@ eo search --collection sentinel-2-l2a \
 `--filter` values accept operator prefixes: `<`, `<=`, `>`, `>=`, `!=`, `=`
 (bare value = equality).
 
+`--format` picks the output: `table` (default), `json` (JSON Lines, same as
+`--json`), `id` (one product uuid per line), or `s3` (one S3 path per line,
+for `eo download --via s3` or external S3 tooling).
+
 ## download
 
 ```bash
 eo download <uuid> [-o DIR] [--via http|s3] [-c N] [--no-checksum]
+eo download s3://eodata/.../PRODUCT.SAFE --via s3
 eo search ... --json | eo download - --via s3 -c 8
+eo download $(eo search ... --format id) -o ./data
 ```
 
 ## keys

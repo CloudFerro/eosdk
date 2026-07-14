@@ -24,6 +24,28 @@ if TYPE_CHECKING:
     from eosdk.eodata.base import ProgressEvent
 
 
+def _check_output(value: Path) -> Path:
+    # Click happily eats a following option as the value (`--output --via s3`),
+    # turning the remaining tokens into product ids; catch that before downloading.
+    if str(value).startswith("-"):
+        raise typer.BadParameter(
+            f"{value} looks like an option, not a directory — is --output missing its value?"
+        )
+    return value
+
+
+def _check_ids(ids: list[str]) -> None:
+    # Absolute and s3:// paths are valid S3 references; relative paths never are.
+    for pid in ids:
+        if pid != "-" and pid.startswith("-"):
+            raise typer.BadParameter(f"{pid!r} looks like an option, not a product id")
+        if pid.startswith(("./", "../", "~")):
+            raise typer.BadParameter(
+                f"{pid!r} looks like a local path, not a product id — "
+                f"did you mean `--output {pid}`?"
+            )
+
+
 def _products_from_stdin() -> list[Product]:
     """Parse JSON Lines (or a single JSON array) from stdin."""
     text = sys.stdin.read().strip()
@@ -38,9 +60,14 @@ def download(
     ctx: typer.Context,
     ids: Annotated[
         list[str] | None,
-        typer.Argument(help="Product ids, or '-' to read `eo search --json` from stdin."),
+        typer.Argument(
+            help="Product ids, S3 paths (with --via s3), or '-' to read "
+            "`eo search --json` from stdin."
+        ),
     ] = None,
-    output: Annotated[Path, typer.Option("--output", "-o", help="Target directory.")] = Path("."),
+    output: Annotated[
+        Path, typer.Option("--output", "-o", help="Target directory.", callback=_check_output)
+    ] = Path("."),
     via: Annotated[str, typer.Option("--via", help="http | s3")] = "http",
     concurrency: Annotated[int, typer.Option("--concurrency", "-c")] = 4,
     checksum: Annotated[
@@ -53,11 +80,25 @@ def download(
     with friendly_errors(state), build_client(state) as client:
         if not ids:
             raise typer.BadParameter("give product ids or '-' for stdin")
+        _check_ids(ids)
         if ids == ["-"]:
             products = _products_from_stdin()
         else:
             # Bare ids build minimal stubs; enough for the HTTP $value route.
-            products = [Product(id=pid, name=pid) for pid in ids]
+            # S3 paths (`s3://…` or `/eodata/…`, e.g. from `eo search --format s3`)
+            # carry the address the S3 backend needs instead.
+            products = []
+            for ref in ids:
+                if ref.startswith(("s3://", "/")):
+                    if via != "s3":
+                        raise typer.BadParameter(
+                            f"{ref!r} is an S3 path and only works with --via s3; "
+                            "the http route needs product ids (eo search --format id)"
+                        )
+                    name = ref.rstrip("/").rsplit("/", 1)[-1]
+                    products.append(Product(id=name, name=name, s3_path=ref))
+                else:
+                    products.append(Product(id=ref, name=ref))
 
         show_progress = not quiet and sys.stderr.isatty()
         if not quiet:

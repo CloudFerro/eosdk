@@ -7,8 +7,10 @@ from typing import Annotated
 import typer
 from rich.table import Table
 
-from eosdk.cli._state import build_client, friendly_errors, get_state, stdout
+from eosdk.cli._state import build_client, friendly_errors, get_state, stderr, stdout
 from eosdk.exceptions import ConfigError
+
+_FORMATS = ("table", "json", "id", "s3")
 
 
 def _parse_bbox(raw: str | None) -> tuple[float, float, float, float] | None:
@@ -57,8 +59,22 @@ def search(
         bool,
         typer.Option("--json", help="Emit one product per line (JSON Lines) for piping."),
     ] = False,
+    fmt: Annotated[
+        str,
+        typer.Option(
+            "--format",
+            "-F",
+            help="table | json | id | s3 — id/s3 print one uuid or S3 path per line.",
+        ),
+    ] = "table",
 ) -> None:
     """Search the catalogue; human table by default, --json for pipelines."""
+    if fmt not in _FORMATS:
+        raise typer.BadParameter(f"--format must be one of: {', '.join(_FORMATS)}")
+    if as_json:
+        if fmt not in ("table", "json"):
+            raise typer.BadParameter("--json and --format conflict; give only one")
+        fmt = "json"
     state = get_state(ctx)
     with friendly_errors(state), build_client(state) as client:
         if bbox is None and collection is None and not (filters or date_from or date_to):
@@ -75,9 +91,23 @@ def search(
             sort=sort,
             protocol=protocol,
         )
-        if as_json:
+        if fmt == "json":
             for product in results:  # streams page by page
                 print(product.model_dump_json())
+            return
+        if fmt == "id":
+            for product in results:
+                print(product.id)
+            return
+        if fmt == "s3":
+            skipped = 0
+            for product in results:
+                if product.s3_path:
+                    print(product.s3_path)
+                else:
+                    skipped += 1
+            if skipped:
+                stderr.print(f"[yellow]skipped {skipped} product(s) without an S3 path[/yellow]")
             return
         table = Table(title="Products")
         table.add_column("name", overflow="fold")

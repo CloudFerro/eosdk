@@ -62,6 +62,40 @@ class TestSearch:
         assert "PRODUCT_A" in result.output
         assert "2 product(s)" in result.output
 
+    def test_format_id_feeds_download_args(
+        self, invoke: Invoke, platform_mocks: respx.Router, tmp_path: Path
+    ) -> None:
+        """eo download $(eo search --format id ...) — no jq required."""
+        invoke("auth", "login", "--username", "alice", "--password-stdin", input="pw\n")
+        result = invoke("search", "--collection", "SENTINEL-2", "--format", "id")
+        assert result.exit_code == 0, result.output
+        ids = result.output.split()
+        assert ids == ["uuid-a", "uuid-b"]
+
+        out_dir = tmp_path / "data"
+        download = invoke("download", *ids, "-o", str(out_dir))
+        assert download.exit_code == 0, download.output
+        assert sorted(p.name for p in out_dir.iterdir()) == ["uuid-a.zip", "uuid-b.zip"]
+
+    def test_format_s3_prints_paths(self, invoke: Invoke, platform_mocks: respx.Router) -> None:
+        invoke("auth", "login", "--username", "alice", "--password-stdin", input="pw\n")
+        result = invoke("search", "--collection", "SENTINEL-2", "--format", "s3")
+        assert result.exit_code == 0, result.output
+        paths = result.output.split()
+        assert len(paths) == 2
+        # the exact depth is fixture-shaped; the CLI just prints Product.s3_path
+        assert all(p.startswith("s3://eodata/Sentinel-2/") for p in paths)
+
+    def test_unknown_format_rejected(self, invoke: Invoke) -> None:
+        result = invoke("search", "--collection", "X", "--format", "yaml")
+        assert result.exit_code == 2
+        assert "--format" in result.output
+
+    def test_json_conflicts_with_format(self, invoke: Invoke) -> None:
+        result = invoke("search", "--collection", "X", "--json", "--format", "id")
+        assert result.exit_code == 2
+        assert "conflict" in result.output
+
     def test_bad_bbox_usage_error(self, invoke: Invoke) -> None:
         result = invoke("search", "--collection", "X", "--bbox", "1,2,3")
         assert result.exit_code == 2
@@ -112,6 +146,25 @@ class TestDownload:
         result = invoke("download", "uuid-nope", "-o", str(tmp_path / "d"))
         assert result.exit_code == 1
         assert "uuid-nope" in result.output
+
+    def test_s3_path_arg_requires_via_s3(
+        self, invoke: Invoke, platform_mocks: respx.Router, tmp_path: Path
+    ) -> None:
+        invoke("auth", "login", "--username", "alice", "--password-stdin", input="pw\n")
+        result = invoke("download", "s3://eodata/some/PRODUCT_A.SAFE", "-o", str(tmp_path / "d"))
+        assert result.exit_code == 2
+        assert "--via s3" in result.output
+
+    def test_output_missing_value_is_rejected(self, invoke: Invoke) -> None:
+        # `--output --via s3 ./data` must not download `s3` and `./data` as products.
+        result = invoke("download", "uuid-a", "--output", "--via", "s3", "./data")
+        assert result.exit_code == 2
+        assert "missing its value" in result.output
+
+    def test_relative_path_as_id_is_rejected(self, invoke: Invoke, tmp_path: Path) -> None:
+        result = invoke("download", "./data", "-o", str(tmp_path / "d"), "--via", "s3")
+        assert result.exit_code == 2
+        assert "looks like a local path" in result.output
 
     def test_stdin_accepts_json_array(
         self, invoke: Invoke, platform_mocks: respx.Router, tmp_path: Path

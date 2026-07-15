@@ -540,6 +540,7 @@ dev = [
     { name = "pytest-cov" },
     { name = "respx" },
     { name = "ruff" },
+    { name = "tomli" },
 ]
 docs = [
     { name = "mkdocs-material" },
@@ -567,6 +568,7 @@ dev = [
     { name = "pytest-cov", specifier = ">=5" },
     { name = "respx", specifier = ">=0.21" },
     { name = "ruff", specifier = ">=0.5" },
+    { name = "tomli", specifier = ">=2" },
 ]
 docs = [
     { name = "mkdocs-material", specifier = ">=9.5" },

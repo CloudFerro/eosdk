@@ -741,14 +741,15 @@ eo search --collection SENTINEL-1 \
           --bbox 22.5,52.9,24.0,53.5 \
           --from 2026-06-01 --to 2026-06-30 \
           --filter "productType=GRD" \
-          --protocol odata --json
+          --protocol odata --format json
 
 eo download S2B_MSIL2A_20260615T095029_... -o ./data --via http
-eo search ... --json | eo download - --via s3 -c 8       # pipe search -> download
+eo search ... --format json | eo download - --via s3 -c 8  # pipe search -> download
 ```
 
-`--json` on read commands and stdin piping (`eo download -`) make the CLI
-composable in shell pipelines and cron jobs.
+JSON output on read commands (`search --format json`, `--json` elsewhere) and
+stdin piping (`eo download -`) make the CLI composable in shell pipelines and
+cron jobs.
 
 ## 8. Error handling
 

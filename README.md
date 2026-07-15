@@ -18,7 +18,7 @@ Python SDK and CLI (`eo`) for Earth Observation services: unified catalogue sear
 - **Managed authentication** — Keycloak login (device flow or username/password),
   token refresh, session caching, and the full S3 access-key lifecycle, all invisible
   once you've logged in.
-- **Two surfaces, one core** — a scriptable `eo` CLI whose `search --json` pipes
+- **Two surfaces, one core** — a scriptable `eo` CLI whose `search --format json` pipes
   straight into `download`, and a typed Python library that shares the same session,
   config, and endpoints.
 - **Config that resolves itself** — endpoints come from a platform's service-discovery
@@ -29,8 +29,8 @@ Python SDK and CLI (`eo`) for Earth Observation services: unified catalogue sear
 
 - **Ships pointed at CDSE out of the box.** The Copernicus Data Space Ecosystem is the
   built-in default — no endpoints to configure before your first search.
-- **Search, then download, as one pipeline.** `eo search --collection … --json | eo
-  download -` is the whole workflow; JSON Lines interoperate cleanly with `jq`, `head`,
+- **Search, then download, as one pipeline.** `eo search --collection … --format json |
+  eo download -` is the whole workflow; JSON Lines interoperate cleanly with `jq`, `head`,
   and the rest of the Unix toolbox.
 - **Auth you never think about.** Log in once; the session is cached per profile and
   reused by every later CLI *and* library call. S3 keys for the S3 backend are minted
@@ -107,15 +107,15 @@ eo search \
 > Unbounded searches are refused — give at least one of
 > `--collection` / `--bbox` / `--from`+`--to` / `--filter`.
 
-**Step 6 — Download.** Pipe `search --json` (one product per line) straight into
-`download`:
+**Step 6 — Download.** Pipe `search --format json` (one product per line) straight
+into `download`:
 
 ```bash
 eo search --collection sentinel-2-l2a \
           --bbox 22.5,52.9,24.0,53.5 \
           --from 2026-06-01 --to 2026-06-30 \
           --filter "cloudCover=<10" \
-          --limit 2 --json \
+          --limit 2 --format json \
   | eo download - --via http --output ./data --concurrency 4
 ```
 

@@ -1,4 +1,4 @@
-"""``eo search`` — catalogue search; ``--json`` emits JSON Lines for piping."""
+"""``eo search`` — catalogue search; ``--format json`` emits JSON Lines for piping."""
 
 from __future__ import annotations
 
@@ -55,26 +55,19 @@ def search(
     limit: Annotated[int | None, typer.Option("--limit", "-n")] = None,
     sort: Annotated[str | None, typer.Option("--sort", help="'+field' or '-field'.")] = None,
     protocol: Annotated[str, typer.Option("--protocol", help="stac | odata")] = "stac",
-    as_json: Annotated[
-        bool,
-        typer.Option("--json", help="Emit one product per line (JSON Lines) for piping."),
-    ] = False,
     fmt: Annotated[
         str,
         typer.Option(
             "--format",
             "-F",
-            help="table | json | id | s3 — id/s3 print one uuid or S3 path per line.",
+            help="table | json | id | s3 — json emits JSON Lines for piping, "
+            "id/s3 print one uuid or S3 path per line.",
         ),
     ] = "table",
 ) -> None:
-    """Search the catalogue; human table by default, --json for pipelines."""
+    """Search the catalogue; human table by default, --format json for pipelines."""
     if fmt not in _FORMATS:
         raise typer.BadParameter(f"--format must be one of: {', '.join(_FORMATS)}")
-    if as_json:
-        if fmt not in ("table", "json"):
-            raise typer.BadParameter("--json and --format conflict; give only one")
-        fmt = "json"
     state = get_state(ctx)
     with friendly_errors(state), build_client(state) as client:
         if bbox is None and collection is None and not (filters or date_from or date_to):

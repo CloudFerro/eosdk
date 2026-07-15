@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Search the catalogue and download products with the `eo` CLI.
 #
-# `eo search --json` emits one product per line (JSON Lines), which pipes
+# `eo search --format json` emits one product per line (JSON Lines), which pipes
 # straight into `eo download -`, jq, head, etc.
 #
 # Prerequisites: `eo auth login` for the download steps (search is anonymous).
@@ -24,18 +24,18 @@ eo search --collection sentinel-2-l2a \
           --bbox 22.5,52.9,24.0,53.5 \
           --from 2026-06-01 --to 2026-06-30 \
           --filter "cloudCover=<10" \
-          --limit 2 --json \
+          --limit 2 --format json \
   | eo download - --via http --output ./data --concurrency 4
 
 # -- 3. JSON Lines interoperate with standard tooling ----------------------------
 # Names and sizes only:
 eo search --collection sentinel-2-l2a --from 2026-06-01 --to 2026-06-08 \
-          --limit 5 --json \
+          --limit 5 --format json \
   | jq -r '"\(.name)\t\(.size)"'
 
 # Filter client-side, keep only the two largest, then download:
 eo search --collection sentinel-2-l2a --from 2026-06-01 --to 2026-06-08 \
-          --limit 20 --json \
+          --limit 20 --format json \
   | jq -s 'sort_by(-.size) | .[:2] | .[]' -c \
   | eo download - --output ./data
 

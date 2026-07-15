@@ -1,4 +1,4 @@
-"""``eo download`` — download products by id or from a piped ``eo search --json``."""
+"""``eo download`` — download products by id or from a piped ``eo search --format json``."""
 
 from __future__ import annotations
 
@@ -50,7 +50,9 @@ def _products_from_stdin() -> list[Product]:
     """Parse JSON Lines (or a single JSON array) from stdin."""
     text = sys.stdin.read().strip()
     if not text:
-        raise typer.BadParameter("nothing on stdin; pipe `eo search --json` into `eo download -`")
+        raise typer.BadParameter(
+            "nothing on stdin; pipe `eo search --format json` into `eo download -`"
+        )
     if text[0] == "[":
         return [Product.model_validate(entry) for entry in json.loads(text)]
     return [Product.model_validate_json(line) for line in text.splitlines() if line.strip()]
@@ -62,7 +64,7 @@ def download(
         list[str] | None,
         typer.Argument(
             help="Product ids, S3 paths (with --via s3), or '-' to read "
-            "`eo search --json` from stdin."
+            "`eo search --format json` from stdin."
         ),
     ] = None,
     output: Annotated[
@@ -75,7 +77,7 @@ def download(
     ] = True,
     quiet: Annotated[bool, typer.Option("--quiet", "-q", help="No progress output.")] = False,
 ) -> None:
-    """Download products to a directory; composable with `eo search --json | eo download -`."""
+    """Download products to a directory; pipes: `eo search --format json | eo download -`."""
     state = get_state(ctx)
     with friendly_errors(state), build_client(state) as client:
         if not ids:

@@ -97,7 +97,8 @@ class TestSearch:
             "2026-06-30",
             "--filter",
             "cloudCover=<20",
-            "--json",
+            "--format",
+            "json",
         )
         assert result.exit_code == 0, result.output
         lines = [line for line in result.output.splitlines() if line.strip()]
@@ -140,10 +141,9 @@ class TestSearch:
         assert result.exit_code == 2
         assert "--format" in result.output
 
-    def test_json_conflicts_with_format(self, invoke: Invoke) -> None:
-        result = invoke("search", "--collection", "X", "--json", "--format", "id")
+    def test_removed_json_flag_rejected(self, invoke: Invoke) -> None:
+        result = invoke("search", "--collection", "X", "--json")
         assert result.exit_code == 2
-        assert "conflict" in result.output
 
     def test_bad_bbox_usage_error(self, invoke: Invoke) -> None:
         result = invoke("search", "--collection", "X", "--bbox", "1,2,3")
@@ -185,9 +185,9 @@ class TestDownload:
     def test_pipe_search_into_download(
         self, invoke: Invoke, platform_mocks: respx.Router, tmp_path: Path
     ) -> None:
-        """The CLI exit-criterion test: eo search --json | eo download -"""
+        """The CLI exit-criterion test: eo search --format json | eo download -"""
         invoke("auth", "login", "--username", "alice", "--password-stdin", input="pw\n")
-        search_result = invoke("search", "--collection", "SENTINEL-2", "--json")
+        search_result = invoke("search", "--collection", "SENTINEL-2", "--format", "json")
         assert search_result.exit_code == 0
 
         out_dir = tmp_path / "data"

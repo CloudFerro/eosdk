@@ -13,12 +13,12 @@ eo auth login                        # device flow -> cached session
 eo search --collection sentinel-2-l2a \
           --bbox 22.5,52.9,24.0,53.5 \
           --from 2026-06-01 --to 2026-06-30 \
-          --filter "cloudCover=<20" --json \
+          --filter "cloudCover=<20" --format json \
   | eo download - --via http -o ./data
 ```
 
-`--json` emits one product per line (JSON Lines), so search results pipe
-straight into `eo download -`, `jq`, or `head`.
+`--format json` emits one product per line (JSON Lines), so search results
+pipe straight into `eo download -`, `jq`, or `head`.
 
 ## Library
 

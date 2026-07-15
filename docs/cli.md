@@ -1,8 +1,9 @@
 # CLI reference
 
 Every command accepts `--profile` and `-v` (full tracebacks). Read commands
-offer `--json` for pipelines; `eo doctor` exits non-zero on failure so it
-works as a pre-flight step: `eo doctor && eo download ...`.
+offer JSON output for pipelines (`--format json` on `search`, `--json`
+elsewhere); `eo doctor` exits non-zero on failure so it works as a
+pre-flight step: `eo doctor && eo download ...`.
 
 ## auth
 
@@ -21,14 +22,14 @@ eo search --collection sentinel-2-l2a \
           --from 2026-06-01 --to 2026-06-30 \
           --filter "cloudCover=<20" --filter "productType=S2MSI2A" \
           --limit 50 --sort -datetime \
-          --protocol stac --json
+          --protocol stac --format json
 ```
 
 `--filter` values accept operator prefixes: `<`, `<=`, `>`, `>=`, `!=`, `=`
 (bare value = equality).
 
-`--format` picks the output: `table` (default), `json` (JSON Lines, same as
-`--json`), `id` (one product uuid per line), or `s3` (one S3 path per line,
+`--format` picks the output: `table` (default), `json` (JSON Lines),
+`id` (one product uuid per line), or `s3` (one S3 path per line,
 for `eo download --via s3` or external S3 tooling).
 
 ## download
@@ -36,7 +37,7 @@ for `eo download --via s3` or external S3 tooling).
 ```bash
 eo download <uuid> [-o DIR] [--via http|s3] [-c N] [--no-checksum]
 eo download s3://eodata/.../PRODUCT.SAFE --via s3
-eo search ... --json | eo download - --via s3 -c 8
+eo search ... --format json | eo download - --via s3 -c 8
 eo download $(eo search ... --format id) -o ./data
 ```
 

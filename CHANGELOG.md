@@ -1,39 +1,17 @@
 # Changelog
 
-## Unreleased (Phase 4 — hardening)
+All notable changes to this project will be documented in this file.
 
-### Changed — protocol-based naming (breaking, pre-1.0)
-- Deployment-specific service names (Zipper, Exos, Keys Manager) are gone from
-  the public surface; data access is named by protocol instead. Discovery
-  schema stays `1.0` (not in production yet).
-- Discovery document: `zipper` / `exos` / `keys_manager` are replaced by one
-  `data_access` service split by transport protocol — `data_access.http` with
-  the `odata` / `resto` strategies, and `data_access.s3` with `endpoint`,
-  `region`, and a `credentials` object of the shape
-  `{ "url": ..., "api_version": ... }` (SPEC §6.2 documents it).
-- Public API: `via="zipper" | "exos"` → `via="http" | "s3"` (`download`,
-  `list`, `open`), CLI `--via http|s3`.
-- Config/profile fields and env vars: `zipper` → `eodata_http`
-  (`EOSDK_EODATA_HTTP_URL`), `exos_endpoint` / `exos_region` → `s3_endpoint` /
-  `s3_region` (`EOSDK_S3_ENDPOINT` / `EOSDK_S3_REGION`), `keys_manager` →
-  `s3_credentials` (`EOSDK_S3_CREDENTIALS_URL`).
-- Version-guard keys follow the document paths: `zipper/odata` →
-  `data_access/http/odata`, `keys_manager` → `data_access/s3/credentials`;
-  `eosdk.discovery.models.api_versions` now walks the nested document and
-  emits slash-joined paths.
-- Internals renamed to match: `eosdk.eodata.zipper.ZipperDownloader` →
-  `eosdk.eodata.http.HttpDownloader`, `eosdk.eodata.exos.ExosDownloader` →
-  `eosdk.eodata.s3.S3Downloader` (both exported from `eosdk.eodata`).
-- `eo doctor`: service checks renamed — `STAC catalogue` → `Catalogue (STAC)`,
-  `OData catalogue` → `Catalogue (OData)`, `Zipper eodata` → `EOData (HTTP)`,
-  `Exos eodata` → `EOData (S3)`, `Exos (S3)` → `S3 credentials`. Readiness
-  results no longer print the probed `/ready` URL; they report `ready`,
-  `not ready (HTTP <code>)`, or `not available (endpoint unreachable)`.
-- `eo discover`: the services table renders the nested `data_access` groups
-  (strategy column shows `http/odata`, `s3/credentials`, ...).
-- `eo search --json` is removed (breaking, pre-1.0); use `--format json`.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html). While the project
+is pre-1.0, minor versions may contain breaking changes; they are called out
+explicitly.
+
+## [Unreleased]
 
 ### Added
+
 - `eo search --format table|json|id|s3`: `id` prints one product uuid per
   line (feeds `eo download` arguments directly, no `jq` needed), `s3` prints
   one S3 path per line for `eo download --via s3` or external S3 tooling.
@@ -63,12 +41,46 @@
 - Live smoke suite (`tests/smoke`, gated by `EOSDK_SMOKE=1`); the anonymous
   half (STAC/OData search, cross-protocol agreement, doctor probes) verified
   against the live CDSE platform. Authenticated half awaits credentials.
-- Bulk-download benchmark harness (`benchmarks/bench_download.py`).
+- Bulk-download benchmark harness (`benchmarks/bench_download.py`); results
+  recorded in `benchmarks/RESULTS.md`.
 - Release workflow: tag-triggered test matrix -> build -> PyPI Trusted
   Publishing (rc tags to TestPyPI) -> GitHub release; `RELEASING.md` tracks the
-  pre-1.0 checklist (license decision and platform credentials still open).
+  pre-1.0 checklist.
+
+### Changed
+
+- Discovery document: `zipper` / `exos` / `keys_manager` are replaced by one
+  `data_access` service split by transport protocol — `data_access.http` with
+  the `odata` / `resto` strategies, and `data_access.s3` with `endpoint`,
+  `region`, and a `credentials` object of the shape
+  `{ "url": ..., "api_version": ... }` (SPEC §6.2 documents it).
+- Public API: `via="zipper" | "exos"` → `via="http" | "s3"` (`download`,
+  `list`, `open`), CLI `--via http|s3`.
+- Config/profile fields and env vars: `zipper` → `eodata_http`
+  (`EOSDK_EODATA_HTTP_URL`), `exos_endpoint` / `exos_region` → `s3_endpoint` /
+  `s3_region` (`EOSDK_S3_ENDPOINT` / `EOSDK_S3_REGION`), `keys_manager` →
+  `s3_credentials` (`EOSDK_S3_CREDENTIALS_URL`).
+- Version-guard keys follow the document paths: `zipper/odata` →
+  `data_access/http/odata`, `keys_manager` → `data_access/s3/credentials`;
+  `eosdk.discovery.models.api_versions` now walks the nested document and
+  emits slash-joined paths.
+- Internals renamed to match: `eosdk.eodata.zipper.ZipperDownloader` →
+  `eosdk.eodata.http.HttpDownloader`, `eosdk.eodata.exos.ExosDownloader` →
+  `eosdk.eodata.s3.S3Downloader` (both exported from `eosdk.eodata`).
+- `eo doctor`: service checks renamed — `STAC catalogue` → `Catalogue (STAC)`,
+  `OData catalogue` → `Catalogue (OData)`, `Zipper eodata` → `EOData (HTTP)`,
+  `Exos eodata` → `EOData (S3)`, `Exos (S3)` → `S3 credentials`. Readiness
+  results no longer print the probed `/ready` URL; they report `ready`,
+  `not ready (HTTP <code>)`, or `not available (endpoint unreachable)`.
+- `eo discover`: the services table renders the nested `data_access` groups
+  (strategy column shows `http/odata`, `s3/credentials`, ...).
+
+### Removed
+
+- `eo search --json` (**breaking**, pre-1.0); use `--format json`.
 
 ### Fixed
+
 - `eo keys list` / `eo keys create` no longer mask the access key id: it is a
   public identifier and the argument `eo keys revoke` needs, so masking made
   revocation impossible from the listing. Secrets remain private (`SecretStr`)
@@ -83,10 +95,10 @@
   (e.g. too many keys on the account — prune with `eo keys list` /
   `eo keys revoke`) instead of misdirecting to the `exos_endpoint` URL.
 
-
-## 0.3.0 (Phase 3 — platform)
+## [0.3.0] - 2026-07-08
 
 ### Added
+
 - Remote service discovery (SPEC §6.2): `/.well-known/eo-services.json`
   fetch/parse with schema-version guard, projection onto the endpoint model,
   strategy merging (deprecation/sunset, capabilities intersection gate), and
@@ -107,7 +119,8 @@
 - Anonymous access to public services: requests go out without a session and
   only a 401 raises the login hint (the CDSE STAC catalogue works unauthenticated).
 
-### Changed — CDSE/CloudFerro alignment (verified against live services)
+### Changed
+
 - Built-in defaults now point at the real deployment: CDSE catalogues,
   `download.dataspace.copernicus.eu` zipper, `eodata.dataspace.copernicus.eu`
   S3, CloudFerro S3 Keys Manager, Keycloak realm `CDSE` / client `cdse-public`.
@@ -122,13 +135,10 @@
   datetime bounds expanded to RFC 3339, `limit` truncates across pages.
 - Zipper Nodes URLs use CDSE-style unquoted node names (percent-encoded).
 
-### Deferred
-- `AsyncClient` — optional per plan decision; the sans-io core (translators,
-  range planner, capability selection, parsing) is already shared code.
-
-## 0.2.0 (Phase 2 — full access)
+## [0.2.0] - 2026-07-08
 
 ### Added
+
 - OData catalogue backend: shared `Query` → `$filter` translation (golden-case
   contract suite), `@odata.nextLink` pagination, CSC normalization,
   `query_raw` escape hatch.
@@ -153,13 +163,12 @@
 - SPEC §7.1 executed end-to-end as the standing acceptance test
   (respx + moto): search → download → list → ranged open.
 
-### Pending external verification
-- Staging run (doctor green, fixture re-recording) — requires real platform
-  credentials and endpoints (`UNVERIFIED-FIXTURE` markers track this).
+## [0.1.0] - 2026-07-08
 
-## 0.1.0 (Phases 0–1)
+_Phases 0–1._
 
 ### Added
+
 - `Client` facade: offline construction, layered config resolution
   (kwargs > `EOSDK_*` env > `./eosdk.toml` > user config > discovery (stub) >
   built-in defaults) with per-endpoint source introspection (`config.resolved()`).
@@ -178,3 +187,8 @@
 - Full exception taxonomy per SPEC §8; shared httpx transport with retry
   policy, `route()` URL builder, and OData key encoding.
 - CI: ruff + mypy strict + pytest on Python 3.10–3.13, build + wheel smoke.
+
+[unreleased]: https://gitlab.cloudferro.com/data-access/eosdk/-/compare/v0.3.0...master
+[0.3.0]: https://gitlab.cloudferro.com/data-access/eosdk/-/compare/v0.2.0...v0.3.0
+[0.2.0]: https://gitlab.cloudferro.com/data-access/eosdk/-/compare/v0.1.0...v0.2.0
+[0.1.0]: https://gitlab.cloudferro.com/data-access/eosdk/-/tags/v0.1.0

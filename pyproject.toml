@@ -9,7 +9,7 @@ description = "Python SDK and CLI for Earth Observation services: catalogue sear
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
-authors = [{ name = "CloudFerro" }]
+authors = [{ name = "Paweł Przestrzelski", email = "pprzestrzelski@cloudferro.com" }]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",

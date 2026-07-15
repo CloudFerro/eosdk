@@ -1,0 +1,124 @@
+variables:
+  REGISTRY_URL: registry.cloudferro.com
+  UV_IMAGE: ghcr.io/astral-sh/uv
+  UV_CACHE_DIR: .uv-cache
+
+stages:
+  - build
+  - linter
+  - test
+
+.uv:
+  tags:
+    - kubernetes
+  image: "$UV_IMAGE:python3.13-bookworm-slim"
+  needs: []
+  cache:
+    key:
+      files:
+        - uv.lock
+    paths:
+      - $UV_CACHE_DIR
+
+docker:
+  stage: build
+  tags:
+    - kubernetes
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.1-debug
+    entrypoint: [""]
+  script:
+    - export DOCKER_IMAGE="$CI_REGISTRY_IMAGE:${CI_COMMIT_REF_SLUG}-${CI_PIPELINE_ID}"
+    - echo "Docker image -- $DOCKER_IMAGE"
+    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"username\":\"$CI_REGISTRY_USER\",\"password\":\"$CI_REGISTRY_PASSWORD\"},\"https://index.docker.io/v1/\":{\"auth\":\"$HUB_BASE64\"}}}" > /kaniko/.docker/config.json
+    - /kaniko/executor --context $CI_PROJECT_DIR --dockerfile $CI_PROJECT_DIR/Dockerfile --destination $DOCKER_IMAGE
+    - echo "Docker image -- $DOCKER_IMAGE"
+
+hadolint:
+  stage: linter
+  tags:
+    - kubernetes
+  image: hadolint/hadolint:v2.12.0-debian
+  needs: []
+  script:
+    - cat Dockerfile | nl -ba
+    - hadolint Dockerfile
+
+dockle:
+  stage: linter
+  tags:
+    - kubernetes
+  image: docker:stable
+  needs:
+    - docker
+  before_script:
+    - apk -Uuv add bash git curl tar sed grep
+    - docker login -u gitlab-ci-token -p ${CI_JOB_TOKEN} $CI_REGISTRY
+  script:
+    - LINK=`curl -Ls -o /dev/null -w %{url_effective} https://github.com/goodwithtech/dockle/releases/latest/download/` # get redirect link to the latest version
+    - LATEST_VERSION=${LINK##*/v} # get the latest version from the redirect link
+    - curl -L -o dockle.tar.gz https://github.com/goodwithtech/dockle/releases/download/v${LATEST_VERSION}/dockle_${LATEST_VERSION}_Linux-64bit.tar.gz
+    - tar zxvf dockle.tar.gz
+    - ./dockle --exit-code 0 "$CI_REGISTRY_IMAGE:${CI_COMMIT_REF_SLUG}-${CI_PIPELINE_ID}"
+
+lint:
+  extends: .uv
+  stage: linter
+  script:
+    - uv sync --frozen
+    - uv run ruff check .
+    - uv run ruff format --check .
+    - uv run mypy
+
+test:
+  extends: .uv
+  stage: test
+  image: "$UV_IMAGE:python$EO_PYTHON-bookworm-slim"
+  parallel:
+    matrix:
+      - EO_PYTHON: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+  script:
+    - uv sync --frozen
+    - uv run pytest --cov=eosdk --cov-report=term --cov-report=xml:coverage.xml --junitxml=junit.xml
+  coverage: '/TOTAL.*\s+(\d+%)$/'
+  artifacts:
+    when: always
+    reports:
+      junit: junit.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+
+container_scan:
+  stage: test
+  needs:
+    - docker
+  tags:
+    - kubernetes
+  image:
+    name: aquasec/trivy:0.64.1
+    entrypoint: [""]
+  allow_failure: true
+  variables:
+    GIT_STRATEGY: none
+    TRIVY_USERNAME: "$CI_REGISTRY_USER"
+    TRIVY_PASSWORD: "$CI_REGISTRY_PASSWORD"
+    TRIVY_AUTH_URL: "$CI_REGISTRY"
+    TRIVY_NO_PROGRESS: "true"
+    TRIVY_CACHE_DIR: ".trivycache/"
+  script:
+    - export FULL_IMAGE_NAME="$REGISTRY_URL/${CI_PROJECT_PATH}:${CI_COMMIT_REF_SLUG}-${CI_PIPELINE_ID}"
+    - time trivy image --download-db-only
+    # Only fail on vulnerabilities that have an available fix. The Debian
+    # bookworm base image carries HIGH/CRITICAL CVEs (perl, util-linux, zlib,
+    # ncurses, ...) that upstream has not fixed (status affected/will_not_fix/
+    # fix_deferred), which we cannot remediate here.
+    - trivy image --username "$CI_REGISTRY_USER" --password "$CI_REGISTRY_PASSWORD" --ignore-unfixed --exit-code 0 --severity HIGH,CRITICAL "$FULL_IMAGE_NAME"
+    - trivy image --username "$CI_REGISTRY_USER" --password "$CI_REGISTRY_PASSWORD" --ignore-unfixed --exit-code 1 --severity HIGH,CRITICAL --output "$CI_PROJECT_DIR/gl-container-scanning-report.json" "$FULL_IMAGE_NAME"
+  cache:
+    paths:
+      - .trivycache/
+  artifacts:
+    when: always
+    reports:
+      container_scanning: gl-container-scanning-report.json

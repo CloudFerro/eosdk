@@ -14,12 +14,13 @@ protocol, and authentication mechanism:
 |---|---|---|---|
 | Catalogue | Catalogue API | OData | Keycloak JWT |
 | Catalogue | Catalogue API | STAC | Keycloak JWT |
-| EOData access | Zipper | HTTP | Keycloak JWT |
-| EOData access | Exos | S3 | Access/Secret keys from **S3 Keys Manager** |
+| EOData access | Download service | HTTP | Keycloak JWT |
+| EOData access | Object storage | S3 | Access/Secret keys from the **S3 credentials service** |
 | Auth | Keycloak | OIDC | user credentials / device flow |
-| Auth | S3 Keys Manager | REST | Keycloak JWT |
+| Auth | S3 credentials service | REST | Keycloak JWT |
 
-Both Zipper and Exos download EOData objects from the large **EOData repository**.
+Both data-access services (HTTP and S3) serve EOData objects from the large
+**EOData repository**.
 Today, every consumer must understand each protocol and wire the auth flows manually.
 
 **Goal:** a single Python SDK (`eosdk`) — usable as a library and as a CLI (`eo`) —
@@ -33,7 +34,7 @@ that hides protocol and credential complexity behind one coherent interface:
 - One import (`from eosdk import Client`) covering the 90% use case:
   search the catalogue, download products, auth handled invisibly.
 - Protocol-agnostic search over both STAC and OData with a unified result model.
-- Pluggable download backends (Zipper/HTTP, Exos/S3) behind one interface.
+- Pluggable download backends (HTTP, S3) behind one interface.
 - Full credential lifecycle management (JWT refresh, S3 key generation/reuse/revocation)
   owned by the SDK; user code never touches raw credentials.
 - Typed, layered configuration with named profiles and environment overrides.
@@ -75,12 +76,12 @@ that hides protocol and credential complexity behind one coherent interface:
    ┌───────────────┼────────────────┐
 ┌──▼────────┐ ┌────▼───────┐ ┌──────▼──────┐
 │ Catalogue │ │ Data access │ │    Auth     │   domain modules
-│ STAC·OData│ │ Zipper·Exos │ │ KC · S3 keys│
+│ STAC·OData│ │ HTTP · S3   │ │ KC · S3 keys│
 └──┬────────┘ └─┬───────┬──┘ └──┬───────┬──┘
    │            │       │       │       │
 ┌──▼───────┐ ┌──▼───┐ ┌─▼──┐ ┌──▼─────┐ ┌▼─────────────┐
-│Catalogue │ │Zipper│ │Exos│ │Keycloak│ │ Keys manager │   external services
-│   API    │ │ HTTP │ │ S3 │ │  JWT   │ │ S3 credentials│
+│Catalogue │ │ HTTP │ │ S3 │ │Keycloak│ │S3 credentials│   external services
+│   API    │ │eodata│ │data│ │  JWT   │ │   service    │
 └──────────┘ └──┬───┘ └─┬──┘ └────────┘ └──────────────┘
                 └───┬───┘
          ┌──────────▼──────────┐
@@ -115,7 +116,8 @@ eosdk/
 ├── exceptions.py          # EosdkError (base); AuthError, ProductNotFound,
 │                          #   DownloadError, EndpointUnreachable,
 │                          #   UnsupportedApiVersion, UnsupportedQueryFeature,
-│                          #   UnsupportedCapability, QuotaExceeded
+│                          #   UnsupportedCapability, QuotaExceeded,
+│                          #   S3KeyLimitReached
 ├── config/
 │   ├── settings.py        # Endpoints + Profile models (pydantic)
 │   ├── loader.py          # resolution chain: kwargs > env (EOSDK_*) >
@@ -132,7 +134,7 @@ eosdk/
 ├── auth/
 │   ├── base.py            # CredentialsProvider protocol
 │   ├── keycloak.py        # JWT: login, refresh, on-disk token cache (0600)
-│   └── s3_keys.py         # S3 Keys Manager client: create/list/revoke; pins /v1
+│   └── s3_keys.py         # S3 credentials service client: create/list/revoke; pins /v1
 ├── catalogue/
 │   ├── base.py            # Catalogue protocol: search(), get(), collections()
 │   ├── stac.py            # STAC client
@@ -140,8 +142,8 @@ eosdk/
 │   └── query.py           # protocol-agnostic Query → translated per backend
 ├── eodata/
 │   ├── base.py            # Downloader protocol: resume, retry, checksum, progress
-│   ├── zipper.py          # HTTP backend; version-aware routes (V1/V2)
-│   └── exos.py            # S3 backend (boto3/aioboto3); keys via auth.s3_keys
+│   ├── http.py            # HTTP backend; version-aware routes (V1/V2)
+│   └── s3.py              # S3 backend (boto3/aioboto3); keys via auth.s3_keys
 ├── transport.py           # shared httpx session: retries, backoff, rate limiting,
 │                          #   User-Agent, route() URL builder
 ├── doctor.py              # health checks: config, discovery, auth, service probes
@@ -169,7 +171,7 @@ catalogue backends.
 - **`Product`** — normalized item: `id`, `name`, `collection`, `size`,
   `geometry`, `datetime`, `cloud_cover` (optional), `checksum` (algorithm + value,
   when the catalogue provides it), plus the identifiers each download backend
-  needs (S3 object path for Exos, product id/URL for Zipper). Raw backend payload
+  needs (S3 object path for the S3 backend, product id/URL for HTTP). Raw backend payload
   retained under `Product.raw` for power users.
 - **`SearchResult`** — lazy, **re-iterable** sequence of `Product`: pages are
   fetched on demand and cached, so it can be traversed more than once (e.g.
@@ -188,10 +190,10 @@ catalogue backends.
 class Endpoints(BaseModel):
     catalogue_stac: HttpUrl
     catalogue_odata: HttpUrl
-    zipper: HttpUrl
-    exos_endpoint: HttpUrl          # S3 endpoint_url
-    exos_region: str = "default"
-    keys_manager: HttpUrl
+    eodata_http: HttpUrl
+    s3_endpoint: HttpUrl            # S3 endpoint_url
+    s3_region: str = "default"
+    s3_credentials: HttpUrl         # S3 credentials service base URL
     keycloak: HttpUrl
     keycloak_realm: str = "eodata"
     discovery_url: HttpUrl | None = None   # overrides {platform}/.well-known/... derivation
@@ -200,7 +202,7 @@ class Endpoints(BaseModel):
 **Resolution precedence** (most specific wins):
 
 1. explicit kwargs to `Client(...)`
-2. environment variables `EOSDK_*` (e.g. `EOSDK_PROFILE`, `EOSDK_ZIPPER_URL`)
+2. environment variables `EOSDK_*` (e.g. `EOSDK_PROFILE`, `EOSDK_EODATA_HTTP_URL`)
 3. project-local `./eosdk.toml`
 4. user config `~/.config/eosdk/config.toml` (selected profile)
 5. remote discovery document (when a `platform` root is configured)
@@ -218,20 +220,20 @@ platform = "https://platform.example.eu"
 
 [profiles.staging]
 platform = "https://staging.example.eu"
-zipper   = "https://zipper-canary.example.eu"   # pinned; rest discovered
+eodata_http = "https://download-canary.example.eu"  # pinned; rest discovered
 
 [profiles.local]                                 # fully manual
 catalogue_stac  = "http://localhost:8081/stac"
 catalogue_odata = "http://localhost:8081/odata"
-zipper          = "http://localhost:8082"
-exos_endpoint   = "http://localhost:9000"
-keys_manager    = "http://localhost:8083/api"
+eodata_http     = "http://localhost:8082"
+s3_endpoint     = "http://localhost:9000"
+s3_credentials  = "http://localhost:8083/api"
 keycloak        = "http://localhost:8180"
 keycloak_realm  = "eodata"
 ```
 
 **Introspection** — `client.config.resolved()` returns every endpoint together
-with its source (`kwargs`, `env:EOSDK_ZIPPER_URL`, `profile:prod`, `discovery`,
+with its source (`kwargs`, `env:EOSDK_EODATA_HTTP_URL`, `profile:prod`, `discovery`,
 `default`); `eo config show` prints the same.
 
 **Validation** — URL syntax of all *locally-known* endpoints (kwargs, env, config
@@ -288,37 +290,56 @@ to the SDK. Resolution order for the discovery URL itself:
 ```json
 {
   "version": "1.0",
+  "platform":     { "name": "example-eu",
+                    "description": "Example Earth-observation data platform (example.eu)" },
   "services": {
     "catalogue":    { "stac": { "url": "https://catalogue.example.eu/stac" },
                       "odata": { "url": "https://catalogue.example.eu/odata",
                                  "api_version": "v1" } },
-    "zipper":       { "odata": { "url": "https://zipper.example.eu/odata",
-                                 "api_version": "v1",
-                                 "capabilities": ["download", "list"] },
-                      "resto": { "url": "https://zipper.example.eu/download",
-                                 "capabilities": ["download"],
-                                 "deprecated": true,
-                                 "sunset": "2027-01-01",
-                                 "replacement": "odata" } },
-    "exos":         { "endpoint": "https://s3.example.eu", "region": "default" },
-    "keys_manager": { "url": "https://keys.example.eu/api", "api_version": "v1" },
-    "auth":         { "issuer": "https://auth.example.eu/realms/eodata" }
+    "data_access":  { "http": { "odata": { "url": "https://download.example.eu/odata",
+                                           "api_version": "v1",
+                                           "capabilities": ["download", "list"] },
+                                "resto": { "url": "https://download.example.eu/download",
+                                           "capabilities": ["download"],
+                                           "deprecated": true,
+                                           "sunset": "2027-01-01",
+                                           "replacement": "odata" } },
+                      "s3":   { "endpoint": "https://s3.example.eu",
+                                "region": "default",
+                                "credentials": { "url": "https://keys.example.eu/api",
+                                                 "api_version": "v1" } } },
+    "auth":         { "issuer": "https://auth.example.eu/realms/eodata",
+                      "client_id": "example-public" }
   }
 }
 ```
 
+Data access is described by one `data_access` service split by transport
+protocol: `http` (whole-object downloads over HTTP) and `s3` (object storage).
 A service that exposes several coexisting endpoint families advertises them as
-named **strategies** rather than a single `url` — here Zipper offers `odata`
-(current) and `resto` (deprecated, sunsetting). The module picks by its
+named **strategies** rather than a single `url` — here `data_access.http`
+offers `odata` (current) and `resto` (deprecated, sunsetting). The module picks by its
 preference order and per-strategy deprecation (see §6.3); each strategy carries
 its own `url` and, where the SDK owns the version, its own `api_version`.
+
+The `s3` block carries no strategies: it holds the object-store `endpoint`, an
+optional `region` (default `"default"`), and a `credentials` object describing
+the service that issues S3 access/secret key pairs. `credentials` has the shape
+`{ "url": <base URL>, "api_version": <optional> }` — `url` is required for the
+block to be usable, and unknown keys are ignored like everywhere else in the
+document.
 
 **Mapping to the `Endpoints` model.** The flat fields in §6.1 hold per-service
 *base* URLs; the nested discovery shape is projected onto them at parse time:
 `auth.issuer` → `keycloak` + `keycloak_realm` (split on `/realms/`),
-`exos.endpoint` / `region` → `exos_endpoint` / `exos_region`, and
+`auth.client_id` → `keycloak_client_id` (optional; the deployment's *public*
+OAuth client for the SDK/CLI — a confidential client id or secret must never
+appear in this document),
+`data_access.s3.endpoint` / `region` → `s3_endpoint` / `s3_region`,
+`data_access.s3.credentials.url` → `s3_credentials`, and
 `catalogue.stac` / `.odata` → the two catalogue fields. A service with several
-strategies collapses onto its single base field (`zipper`): the SDK stores one
+strategies collapses onto its single base field (`data_access.http` →
+`eodata_http`): the SDK stores one
 base and appends each strategy's route template itself (§6.3). Precedence is
 resolved per service — a locally pinned base (kwargs/env/config, which beats
 discovery) is used together with the SDK's built-in strategy set; absent a pin,
@@ -334,20 +355,20 @@ never extend it. The effective capability set is
 `built_in(code)` when it is absent. Advertising a capability the SDK does not
 implement has no effect (the code must exist); the field's sole purpose is to let
 a deployment **disable** a capability it already supports, without an SDK change
-(e.g. temporarily turning off `open` on Exos during an incident). Whole-strategy
+(e.g. temporarily turning off `open` on the s3 service during an incident). Whole-strategy
 disable is instead expressed via `deprecated`/`sunset`/availability (see below);
 `capabilities` exists only for the finer grain of switching off one operation on
 an otherwise-live endpoint (see §14 open question — confirm this granularity is
 actually required before relying on it).
 
 `api_version` is optional (see §6.3): services — or strategies — whose protocol
-versioning is owned externally, such as Exos over S3, omit it.
+versioning is owned externally, such as S3 object access, omit it.
 
 The document may additionally carry deprecation notices
 (`"deprecated": true, "sunset": "2027-01-01", "replacement": "..."`), which the
 SDK surfaces as warnings. These may be declared per service or per **download
 strategy** where a service exposes several coexisting endpoint families (e.g.
-Zipper's `resto` strategy marked deprecated while `odata` is current — see §6.3),
+the http service's `resto` strategy marked deprecated while `odata` is current — see §6.3),
 so the SDK can prefer the current strategy and warn only when it falls back to a
 sunsetting one.
 
@@ -356,6 +377,39 @@ sunsetting one.
 major version; a document whose major version it does not recognize is rejected
 with a clear error rather than partially parsed. Unknown service or strategy keys
 are ignored, so the format stays forward-compatible.
+
+Because unknown keys are ignored, evolution within a major is additive and a
+major bump should be essentially never needed. If one ever is, it is handled by
+the **filename, not the URL scheme**: `eo-services.json` is frozen at major 1
+for its lifetime — a new major is published *alongside* it under a new
+well-known name (`/.well-known/eo-services.v2.json`), and SDKs that implement
+it probe newest-first and fall back. Deployed SDKs therefore never encounter a
+major they cannot parse at the URL they derive, no coordinated client upgrade
+is required, and the document remains static JSON servable from a bucket/CDN
+(which content negotiation via `Accept` headers would break). The cost of
+versioning is paid only if a second major ever exists.
+
+**Platform identity & profile snapshot** — the optional top-level `platform`
+block names the deployment (`name`, free-text `description`). When present,
+the SDK materializes the whole projected online configuration as a config
+profile named after the platform (`profiles.<name>`, name normalized to a
+profile-safe slug) on the first successful document load, marked with
+`discovered_from = <discovery URL>` so its provenance is explicit. The
+snapshot records the bootstrap (`platform` root / `discovery_url`), the
+`description`, and every projected endpoint, giving the user a named,
+inspectable, offline-usable profile without running `eo config init`.
+
+- **Name conflict** — a same-named profile *without* the `discovered_from`
+  marker is user-owned: the SDK never overwrites it. It warns (CLI: printed by
+  `eo discover`; library: a `logging` warning) and skips the save; the user
+  resolves it by renaming/deleting their profile, or simply keeps it — their
+  pins beat discovery anyway.
+- **Online document changes** — a profile *with* the marker is a managed
+  mirror: every re-fetch of the document (TTL expiry, `eo discover
+  --refresh`) resyncs it wholesale, so endpoint changes published by the
+  platform propagate to the profile. Manual edits to a managed profile are
+  therefore overwritten on the next resync — to customize, copy the profile
+  under another name (which drops the marker semantics for the copy).
 
 **Per-service standard discovery** (used with or without the platform document):
 
@@ -376,25 +430,30 @@ bust the cache.
 - Users never put API versions in config or discovery URLs. Service URLs are
   **version-free bases**; each client module pins the API version(s) it supports
   and appends the version segment itself via `route()`
-  (e.g. `keys_manager` base + `/v1` lives in `auth/s3_keys.py`).
+  (e.g. `s3_credentials` base + `/v1` lives in `auth/s3_keys.py`).
 - If a configured or discovered base already contains a version segment
   (e.g. ends in `/v1`), the SDK does **not** strip it — this is a configuration
   error that would produce `…/v1/v1`. `eo doctor` flags a base whose final path
-  segment matches `v\d+` as a likely mistake.
+  segment matches `v\d+` as a likely mistake. Exception: `catalogue_stac` is
+  the URL of the self-describing STAC landing page (§6.2), used verbatim — the
+  SDK never appends `/vN` to it, and CDSE's landing page itself lives under
+  `/v1`, so doctor does not flag it.
 - `api_version` is **optional** per service in the discovery document. Services
-  whose protocol versioning is owned externally (e.g. Exos over S3/boto3) omit it
+  whose protocol versioning is owned externally (e.g. S3 object access via boto3) omit it
   and have no version-aware routes.
 - When `api_version` is **present**, the SDK checks compatibility at startup /
   first use and raises `UnsupportedApiVersion` with an actionable message
-  ("zipper advertises v3; this SDK supports v1–v2 — upgrade eosdk or pin
-  EOSDK_ZIPPER_URL"), instead of failing mid-download with a 404.
+  ("data_access/http/odata advertises v3; this SDK supports v1–v2 — upgrade
+  eosdk or pin EOSDK_EODATA_HTTP_URL"), instead of failing mid-download with a
+  404.
 - When `api_version` is **absent** (omitted from the document, or no discovery
   document available), a version-aware module falls back to its **default
   supported version** (the newest it implements) rather than failing. This is
   also the Phase-1 path, before discovery exists.
 - `api_version` governs only the **version within a route strategy**, which is a
   separate axis from *which endpoint family* serves an operation. A single
-  service can expose several coexisting strategies — e.g. Zipper serves downloads
+  service can expose several coexisting strategies — e.g. the http data access
+  serves downloads
   via both the modern `odata` strategy (the OData `$value` endpoint,
   `/odata/v1/Products({id})/$value`) and the `resto` strategy (the legacy
   `/download/{id}` endpoint that is being decommissioned). These are not versions
@@ -402,8 +461,8 @@ bust the cache.
 - A module holds an **ordered preference of strategies** and selects
   **capability-first, then by preference**: for the requested operation, filter
   to strategies that both (a) are available and not past `sunset` and (b) support
-  that capability (§6.6), then pick the highest-preference survivor. Zipper's
-  preference is `odata` first, `resto` as fallback — but `resto` supports only
+  that capability (§6.6), then pick the highest-preference survivor. The http
+  service's preference is `odata` first, `resto` as fallback — but `resto` supports only
   the `download` capability, so it is a valid fallback for downloads and never
   for `list`/`open`.
   If no available strategy supports the requested capability, the SDK raises
@@ -424,7 +483,8 @@ bust the cache.
 The auth module owns all credential lifecycles. Catalogue and download backends
 declare which `CredentialsProvider` they need; the client wires it up.
 
-**Keycloak (JWT)** — used by the catalogue, Zipper, and S3 Keys Manager:
+**Keycloak (JWT)** — used by the catalogue, the HTTP data access, and the S3
+credentials service:
 
 - Login flows: username/password (resource owner) and device flow (for headless
   CLI use); endpoints from OIDC discovery.
@@ -433,7 +493,7 @@ declare which `CredentialsProvider` they need; the client wires it up.
 - On HTTP 401 from any service: one forced refresh + retry, then `AuthError`.
 - `eo auth login / logout / status`.
 
-**S3 keys (Exos)** — via S3 Keys Manager (itself authenticated with the JWT):
+**S3 keys** — via the S3 credentials service (itself authenticated with the JWT):
 
 - `S3KeysProvider.get_or_create(label=...)` — default policy: reuse a labeled
   key pair per profile.
@@ -444,11 +504,25 @@ declare which `CredentialsProvider` they need; the client wires it up.
 - `eo keys create --export` emits `AWS_ACCESS_KEY_ID=... / AWS_SECRET_ACCESS_KEY=...`
   lines for interop with plain `aws s3`, rclone, etc. Secrets are never printed
   otherwise (masked in logs and `status` output).
+- **Key limit.** The credentials service caps the number of concurrent key pairs per
+  account; at the cap, `POST /credentials` answers HTTP 403 with
+  "Max number of credentials reached." The SDK treats hitting the cap as a
+  first-class condition, not a generic HTTP failure: `create()` maps the
+  refusal to `S3KeyLimitReached` (§8), whose message includes the remediation
+  (revoke an
+  unused key, or use labeled reuse). Both key policies are designed to stay
+  under the cap — `get_or_create(label=...)` never creates a second pair for a
+  label that still has a live key, and ephemeral keys revoke on context exit.
+  An ephemeral key leaked by a hard kill still counts against the cap until
+  cleaned up with `eo keys revoke`.
 
 ### 6.5 Catalogue (`eosdk.catalogue`)
 
 - `Catalogue` protocol: `search(query) -> SearchResult`, `get(id) -> Product`,
-  `collections() -> list[Collection]`.
+  `collections() -> list[Collection]`,
+  `queryables(collection) -> list[Queryable]` (filterable attributes: STAC
+  `/queryables`, CSC OData `Attributes(<collection>)`; names are backend-native
+  and raise `UnsupportedQueryFeature` where the backend has no such endpoint).
 - `protocol="stac" | "odata"` selectable per call; default from config.
 - Both backends translate the shared `Query` object (see §5) and normalize
   results to `Product`.
@@ -479,9 +553,9 @@ only what it supports:
     request). The public contract is anchored here so that behaviour and cost are
     uniform across backends.
   - **Recursive is opt-in and *not* uniform cost.** `recursive=True` returns the
-    whole subtree, but the two backends realize it very differently: Exos does a
+    whole subtree, but the two backends realize it very differently: S3 does a
     native prefix walk (~one paginated `ListObjectsV2` over the product prefix),
-    while Zipper must issue **one request per directory** (BFS/DFS over the
+    while HTTP must issue **one request per directory** (BFS/DFS over the
     `Nodes` hierarchy). Each backend overrides recursion with its optimal
     strategy rather than inheriting a generic per-level fan-out; the performance
     asymmetry is documented, not hidden. `list()` never implicitly walks the full
@@ -497,26 +571,26 @@ only what it supports:
     with f-strings.
 - `RandomAccess` *(optional)* — the `open` capability: `open(product, path) ->
   file-like` — ranged reads of a single file inside a product, no full-product
-  transfer. **Exos-only:** it depends on HTTP `Range` / ranged S3 GETs, which
-  **Zipper does not support** (neither strategy). Zipper serves whole objects
-  only — a full product (one or more files delivered as a zip) or a single
-  file — so `open` is never available via `via="zipper"`.
+  transfer. **S3-only:** it depends on ranged S3 GETs, which the
+  **HTTP backend does not support** (neither strategy). The HTTP service serves
+  whole objects only — a full product (one or more files delivered as a zip) or
+  a single file — so `open` is never available via `via="http"`.
 
-Backend chosen via `via="zipper" | "exos"`. Capability names (`download`, `list`,
+Backend chosen via `via="http" | "s3"`. Capability names (`download`, `list`,
 `open`) are the vocabulary used in discovery `capabilities` (§6.2) and in
 `UnsupportedCapability`. Capability matrix:
 
 | Backend / strategy | `download` | `list` | `open` |
 |---|---|---|---|
-| Zipper `odata`     | ✓ | ✓ | - |
-| Zipper `resto`     | ✓ | — | — |
-| Exos (S3)          | ✓ | ✓ | ✓ |
+| HTTP `odata`       | ✓ | ✓ | - |
+| HTTP `resto`       | ✓ | — | — |
+| S3                 | ✓ | ✓ | ✓ |
 
 Requesting a capability a backend lacks raises `UnsupportedCapability` (§8); for
-Zipper this interacts with capability-aware strategy selection (§6.3) — `resto`
+HTTP this interacts with capability-aware strategy selection (§6.3) — `resto`
 is a valid fallback for `download` but never for `list`/`open`.
 
-Zipper's `odata` strategy realizes these capabilities over the OData routes:
+The HTTP `odata` strategy realizes these capabilities over the OData routes:
 full-product download via `Products({id})/$value` (not compressed product) or the equivalent
 `Products({id})/$zip` for compressed products, if available; single-file download via `Products({id})/Nodes({name})/$value`
 and standalone `Assets({id})/$value`; and listing via `Products({id})/Nodes`
@@ -528,25 +602,25 @@ no ranged/partial read (see `open` above).
   `Product.raw`). `path` is a **logical, backend-agnostic** path within the
   product (e.g. `GRANULE/L2A_.../IMG_DATA/R10m/..._B04.jp2`); each backend is
   responsible for translating it to its own addressing — the OData
-  `Nodes(a)/Nodes(b)/…` chain for Zipper, the S3 key suffix under the product
-  prefix for Exos — exactly as `Product` already carries per-backend identifiers
+  `Nodes(a)/Nodes(b)/…` chain for HTTP, the S3 key suffix under the product
+  prefix for S3 — exactly as `Product` already carries per-backend identifiers
   (§5). Returned by `list()`; the same `path` value feeds `open()` and selective
   `fetch()` identically regardless of `via=`.
 - Common transfer features implemented once in `base.py`, inherited by all
   backends (distinct from the `download`/`list`/`open` **capabilities** above):
-  - **Resume**: ranged multipart GET (**Exos only**). **Zipper does not support
-    HTTP `Range` requests**, so an interrupted Zipper transfer is restarted from
-    the beginning rather than resumed; the feature is a no-op on that backend.
+  - **Resume**: ranged multipart GET (**S3 only**). **The HTTP backend does not
+    support HTTP `Range` requests**, so an interrupted HTTP transfer is restarted
+    from the beginning rather than resumed; the feature is a no-op on that backend.
   - **Retries**: exponential backoff with jitter (tenacity), idempotent-safe.
   - **Checksum verification** against catalogue metadata when available.
   - **Progress callback** (bytes done/total per product + aggregate); the CLI
     plugs a rich progress bar into it.
   - **Concurrency**: bounded worker pool across products; per-file parallel
-    ranges for large objects (Exos).
+    ranges for large objects (S3).
 - **Partial access** without full-product transfer:
-  `client.open(product, path="GRANULE/.../B04.jp2", via="exos")` → file-like
+  `client.open(product, path="GRANULE/.../B04.jp2", via="s3")` → file-like
   object backed by ranged S3 GETs
-- Zipper backend injects the JWT per request; Exos backend receives S3
+- The HTTP backend injects the JWT per request; the S3 backend receives S3
   credentials from `S3KeysProvider` and never sees Keycloak tokens.
 
 ### 6.7 Transport (`eosdk.transport`)
@@ -564,8 +638,8 @@ no ranged/partial read (see `open` above).
   **Config** (file found, profile valid, URL syntax), **Discovery** (platform
   document fetch/cache age, API version compatibility), **Auth** (OIDC
   discovery, token cache validity, active S3 key pairs), **Services**
-  (STAC landing page + conformance, OData service document, Zipper `HEAD`,
-  Exos connectivity).
+  (STAC landing page + conformance, OData service document, eodata readiness
+  over HTTP and S3, S3 credentials check).
 - Each domain module contributes its own probe, so a future access service
   brings its doctor check along with it.
 - Checks degrade gracefully: a section whose subsystem is not configured or not
@@ -595,15 +669,15 @@ products = client.search(
     limit=50,
 )
 
-client.download(products, target="./data", via="zipper",
+client.download(products, target="./data", via="http",
                 concurrency=4, resume=True, checksum=True)
-# ...or fetch the same results over S3 instead: via="exos" (S3 keys auto-managed)
+# ...or fetch the same results over S3 instead: via="s3" (S3 keys auto-managed)
 
 product = next(iter(products))               # SearchResult is re-iterable (pages cached)
-nodes   = client.list(product, via="zipper") # files inside the product (odata strategy)
+nodes   = client.list(product, via="http")   # files inside the product (odata strategy)
 band    = next(n for n in nodes if n.path.endswith("B04.jp2"))
 
-with client.open(product, path=band.path, via="exos") as f:
+with client.open(product, path=band.path, via="s3") as f:
     data = f.read()                      # ranged read, no full download
 ```
 
@@ -614,7 +688,7 @@ Client()                                             # built-in defaults
 Client(profile="staging")
 Client(platform="https://platform.example.eu")       # single-root bootstrap
 Client(profile="prod",
-       endpoints={"zipper": "http://localhost:8080"})  # surgical override
+       endpoints={"eodata_http": "http://localhost:8080"})  # surgical override
 
 client.config.resolved()      # endpoint -> (value, source) mapping
 client.discovery.services()   # parsed discovery document
@@ -626,7 +700,7 @@ client.discovery.refresh()    # bust TTL cache
 ```python
 from eosdk.auth import KeycloakAuth, S3KeysProvider
 from eosdk.catalogue import ODataCatalogue
-from eosdk.eodata import ExosDownloader
+from eosdk.eodata import S3Downloader
 
 auth = KeycloakAuth(url=..., realm=..., client_id=..., username=...)
 cat  = ODataCatalogue(base_url=..., auth=auth)
@@ -634,7 +708,7 @@ raw  = cat.query_raw("Products?$filter=contains(Name,'S1A') and ...")  # escape 
 prod = cat.get("S2B_MSIL2A_20260615T095029_...")                       # normalized Product
 
 keys = S3KeysProvider(auth=auth).get_or_create(label="my-pipeline")
-dl   = ExosDownloader(endpoint=..., credentials=keys)
+dl   = S3Downloader(endpoint=..., credentials=keys)
 dl.fetch(prod, target="/data", concurrency=8)
 ```
 
@@ -645,7 +719,7 @@ dl.fetch(prod, target="/data", concurrency=8)
 eo config init                       # interactive: platform URL or manual endpoints
 eo config profiles                   # list profiles, mark default
 eo config show --profile prod        # resolved endpoints + their source
-eo config set profiles.staging.zipper https://zipper-canary.example.eu
+eo config set profiles.staging.eodata_http https://download-canary.example.eu
 eo config use staging
 
 # discovery & diagnostics
@@ -667,14 +741,15 @@ eo search --collection SENTINEL-1 \
           --bbox 22.5,52.9,24.0,53.5 \
           --from 2026-06-01 --to 2026-06-30 \
           --filter "productType=GRD" \
-          --protocol odata --json
+          --protocol odata --format json
 
-eo download S2B_MSIL2A_20260615T095029_... -o ./data --via zipper
-eo search ... --json | eo download - --via exos -c 8     # pipe search -> download
+eo download S2B_MSIL2A_20260615T095029_... -o ./data --via http
+eo search ... --format json | eo download - --via s3 -c 8  # pipe search -> download
 ```
 
-`--json` on read commands and stdin piping (`eo download -`) make the CLI
-composable in shell pipelines and cron jobs.
+JSON output on read commands (`search --format json`, `--json` elsewhere) and
+stdin piping (`eo download -`) make the CLI composable in shell pipelines and
+cron jobs.
 
 ## 8. Error handling
 
@@ -690,6 +765,7 @@ Exception taxonomy (all inherit `EosdkError`):
 | `ProductNotFound` | catalogue get/download miss | product id, backend |
 | `DownloadError` | transfer failure after retries | product, backend, last cause |
 | `QuotaExceeded` | service-side 429/quota | service, retry-after if provided |
+| `S3KeyLimitReached` | Keys Manager refuses key creation: account's cap on concurrent key pairs is reached (distinct from 429 — only revoking clears it) | service, server detail, remediation (revoke via `eo keys revoke`, or labeled reuse) |
 
 Principles: fail early (version guard, query translation) rather than
 mid-transfer; every error names the failing service and, where possible, the
@@ -712,7 +788,7 @@ config knob that fixes it.
 | Concern | Choice | Notes |
 |---|---|---|
 | HTTP | `httpx` | one library for sync + async |
-| S3 | `boto3` / `aioboto3` | Exos backend |
+| S3 | `boto3` / `aioboto3` | S3 backend |
 | Models/config | `pydantic` v2 | validation; TOML read `tomllib` (3.11+; `tomli` on 3.10), write `tomlkit` (round-trips comments/layout for `eo config init`/`set`) |
 | CLI | `typer` + `rich` | progress bars from the download callback |
 | Retries | `tenacity` | shared policy in transport |
@@ -736,7 +812,7 @@ Python ≥ 3.10 (pattern matching, `tomllib` in 3.11 — vendor fallback for 3.1
   unsupported features), config resolution precedence matrix, token refresh
   state machine, resume/offset logic, doctor checks.
 - **Contract/integration**: `respx` fixtures replaying real service responses
-  (catalogue pages, discovery documents, Keycloak OIDC); `moto` for the Exos/S3
+  (catalogue pages, discovery documents, Keycloak OIDC); `moto` for the S3
   path; optional live smoke suite gated by env vars against a staging platform.
 - **CLI**: `typer` runner tests; `--json` output schema snapshots.
 - CI: lint (ruff), type-check (mypy, strict on `eosdk/`), tests on 3.10–3.13.
@@ -746,8 +822,8 @@ Python ≥ 3.10 (pattern matching, `tomllib` in 3.11 — vendor fallback for 3.1
 | Phase | Scope | Exit criterion |
 |---|---|---|
 | 0 — Foundations | repo scaffolding, `transport`, `config` loader + profiles, `models`, exceptions, CI | `Client(profile=...)` resolves endpoints; unit tests green |
-| 1 — MVP | Keycloak auth (login/refresh/cache), STAC search, Zipper download (resume/retry/checksum/progress), CLI: `auth`, `search`, `download`, `config` | end-to-end: search → download via Zipper from CLI and library |
-| 2 — Full access | OData backend, S3 Keys Manager client, Exos backend (+ `open()` partial reads), `eo keys`, `eo doctor` | feature parity across protocols/backends; doctor green on staging |
+| 1 — MVP | Keycloak auth (login/refresh/cache), STAC search, HTTP download (resume/retry/checksum/progress), CLI: `auth`, `search`, `download`, `config` | end-to-end: search → download via HTTP from CLI and library |
+| 2 — Full access | OData backend, S3 credentials client, S3 backend (+ `open()` partial reads), `eo keys`, `eo doctor` | feature parity across protocols/backends; doctor green on staging |
 | 3 — Platform | discovery (platform doc, OIDC, STAC/OData probes, cache), version guard, `eo discover`, `AsyncClient`, plugin entry points | single-root bootstrap works; async parity |
 | 4 — Hardening | docs site, live smoke tests, performance pass on bulk downloads, 1.0 release to PyPI | 1.0.0 published |
 
@@ -764,7 +840,9 @@ Python ≥ 3.10 (pattern matching, `tomllib` in 3.11 — vendor fallback for 3.1
 5. **STAC client** — thin custom implementation vs `pystac-client` dependency
    (spike in Phase 1).
 6. **Keycloak client registration** — dedicated public client for the SDK
-   (device flow enabled) vs reuse of an existing client id.
+   (device flow enabled) vs reuse of an existing client id. Whatever the
+   decision, the deployment can advertise it via `auth.client_id` in the
+   discovery document (§6.2) instead of the SDK hardcoding it.
 7. **Telemetry** — anonymous usage metrics: out for v1, revisit later.
 8. **License & repository hosting** — internal vs open source.
 9. **Discovery `capabilities` granularity** — is sub-strategy capability disabling

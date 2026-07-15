@@ -1,0 +1,16 @@
+{
+  "issuer": "https://auth.example.eu/realms/eodata",
+  "authorization_endpoint": "https://auth.example.eu/realms/eodata/protocol/openid-connect/auth",
+  "token_endpoint": "https://auth.example.eu/realms/eodata/protocol/openid-connect/token",
+  "device_authorization_endpoint": "https://auth.example.eu/realms/eodata/protocol/openid-connect/auth/device",
+  "userinfo_endpoint": "https://auth.example.eu/realms/eodata/protocol/openid-connect/userinfo",
+  "end_session_endpoint": "https://auth.example.eu/realms/eodata/protocol/openid-connect/logout",
+  "jwks_uri": "https://auth.example.eu/realms/eodata/protocol/openid-connect/certs",
+  "grant_types_supported": [
+    "authorization_code",
+    "refresh_token",
+    "password",
+    "urn:ietf:params:oauth:grant-type:device_code"
+  ],
+  "response_types_supported": ["code", "none", "id_token", "token"]
+}

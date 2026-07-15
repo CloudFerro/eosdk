@@ -6,7 +6,14 @@ import httpx
 import pytest
 import respx
 
-from eosdk.catalogue.stac import StacCatalogue, decode_multihash
+from eosdk.catalogue.stac import (
+    StacCatalogue,
+    _download_id,
+    _normalize_interval,
+    _product_s3_path,
+    _queryable_type,
+    decode_multihash,
+)
 from eosdk.exceptions import (
     CollectionNotFound,
     ProductNotFound,
@@ -119,6 +126,71 @@ class TestConformance:
         list(StacCatalogue(BASE, transport=transport).search(Query()))
         assert search_mock.call_count == 1
 
+    @respx.mock
+    def test_missing_search_link_falls_back_to_base_search(self, catalogue: StacCatalogue) -> None:
+        page = landing_page()
+        page["links"] = [{"rel": "self", "href": BASE}]  # no rel="search" advertised
+        respx.get(BASE).mock(return_value=httpx.Response(200, json=page))
+        search_mock = respx.post(SEARCH).mock(
+            return_value=httpx.Response(200, json=feature_page([]))
+        )
+        assert list(catalogue.search(Query())) == []
+        assert search_mock.call_count == 1
+
+
+def landing_page_get_only() -> dict[str, Any]:
+    page = landing_page()
+    page["links"] = [
+        {"rel": "self", "href": BASE},
+        {"rel": "search", "href": SEARCH, "method": "GET"},
+    ]
+    return page
+
+
+class TestGetMethodSearch:
+    @respx.mock
+    def test_body_translated_to_query_params(self, catalogue: StacCatalogue) -> None:
+        respx.get(BASE).mock(return_value=httpx.Response(200, json=landing_page_get_only()))
+        search_mock = respx.get(url__startswith=SEARCH).mock(
+            return_value=httpx.Response(200, json=feature_page([item()]))
+        )
+        list(
+            catalogue.search(
+                Query(
+                    collection="SENTINEL-2",
+                    bbox=(22.5, 52.9, 24.0, 53.5),
+                    datetime="2026-06-01/2026-06-30",
+                    limit=5,
+                    sort="-datetime",
+                )
+            )
+        )
+        params = dict(search_mock.calls.last.request.url.params)
+        assert params == {
+            "collections": "SENTINEL-2",
+            "bbox": "22.5,52.9,24.0,53.5",
+            "datetime": "2026-06-01T00:00:00Z/2026-06-30T23:59:59Z",
+            "limit": "5",
+            "sortby": "-datetime",
+        }
+
+    @respx.mock
+    def test_ascending_sort_has_no_sign_prefix(self, catalogue: StacCatalogue) -> None:
+        respx.get(BASE).mock(return_value=httpx.Response(200, json=landing_page_get_only()))
+        search_mock = respx.get(url__startswith=SEARCH).mock(
+            return_value=httpx.Response(200, json=feature_page([item()]))
+        )
+        list(catalogue.search(Query(collection="SENTINEL-2", sort="+name")))
+        assert dict(search_mock.calls.last.request.url.params)["sortby"] == "name"
+
+    @respx.mock
+    def test_filters_over_get_endpoint_unsupported(self, catalogue: StacCatalogue) -> None:
+        respx.get(BASE).mock(return_value=httpx.Response(200, json=landing_page_get_only()))
+        search_mock = respx.get(url__startswith=SEARCH)
+        with pytest.raises(UnsupportedQueryFeature, match="GET-only"):
+            list(catalogue.search(Query(filters={"cloudCover": "<20"})))
+        assert search_mock.call_count == 0
+
 
 class TestTranslation:
     @respx.mock
@@ -203,6 +275,61 @@ class TestPagination:
         follow_up = json.loads(search_mock.calls.last.request.content)
         assert follow_up["token"] == "x"
         assert follow_up["collections"] == ["SENTINEL-2"]  # merged, not replaced
+
+    @respx.mock
+    def test_post_next_link_without_merge_replaces_body(self, catalogue: StacCatalogue) -> None:
+        respx.get(BASE).mock(return_value=httpx.Response(200, json=landing_page()))
+        pages = [
+            feature_page(
+                [item()],
+                next_link={"href": SEARCH, "method": "POST", "body": {"token": "x"}},
+            ),
+            feature_page([]),
+        ]
+        search_mock = respx.post(SEARCH).mock(
+            side_effect=[httpx.Response(200, json=p) for p in pages]
+        )
+        list(catalogue.search(Query(collection="SENTINEL-2")))
+        follow_up = json.loads(search_mock.calls.last.request.content)
+        assert follow_up == {"token": "x"}  # no merge flag: the link body replaces ours
+
+    @respx.mock
+    def test_limit_truncates_and_stops_pagination(self, catalogue: StacCatalogue) -> None:
+        item1, item2 = item(), item()
+        item2["id"] = "second"
+        page2_url = f"{SEARCH}?token=p2"
+        respx.get(BASE).mock(return_value=httpx.Response(200, json=landing_page()))
+        respx.post(SEARCH).mock(
+            return_value=httpx.Response(
+                200,
+                json=feature_page([item1, item2], next_link={"href": page2_url, "method": "GET"}),
+            )
+        )
+        second = respx.get(page2_url)
+        result = catalogue.search(Query(collection="SENTINEL-2", limit=2))
+        assert len(list(result)) == 2
+        assert second.call_count == 0  # limit reached; next page never fetched
+
+    @respx.mock
+    def test_limit_truncates_within_a_page(self, catalogue: StacCatalogue) -> None:
+        item1, item2 = item(), item()
+        item2["id"] = "second"
+        respx.get(BASE).mock(return_value=httpx.Response(200, json=landing_page()))
+        respx.post(SEARCH).mock(return_value=httpx.Response(200, json=feature_page([item1, item2])))
+        result = catalogue.search(Query(collection="SENTINEL-2", limit=1))
+        assert [p.name for p in result] == [item1["id"]]
+
+
+class TestRawSearch:
+    @respx.mock
+    def test_body_posted_verbatim(self, catalogue: StacCatalogue) -> None:
+        respx.get(BASE).mock(return_value=httpx.Response(200, json=landing_page()))
+        search_mock = respx.post(SEARCH).mock(
+            return_value=httpx.Response(200, json=feature_page([item()]))
+        )
+        document = catalogue.raw_search({"ids": ["X"], "limit": 1})
+        assert json.loads(search_mock.calls.last.request.content) == {"ids": ["X"], "limit": 1}
+        assert document["features"][0]["id"] == item()["id"]  # raw JSON, not Products
 
 
 class TestUnknownCollection:
@@ -366,6 +493,13 @@ class TestMultihash:
     def test_unknown_or_malformed_degrade_to_none(self, bad: str) -> None:
         assert decode_multihash(bad) is None
 
+    def test_digest_length_mismatch_degrades_to_none(self) -> None:
+        # md5 varint code, declared length 16, but only 15 digest bytes follow
+        assert decode_multihash("d50110" + "ab" * 15) is None
+
+    def test_empty_digest_degrades_to_none(self) -> None:
+        assert decode_multihash("d50100") is None
+
 
 class TestCollectionsAndQueryables:
     @respx.mock
@@ -440,3 +574,105 @@ class TestCollectionsAndQueryables:
         )
         with pytest.raises(UnsupportedQueryFeature, match="queryables"):
             catalogue.queryables("nope")
+
+    def test_non_dict_schema_fragment_has_no_type(self) -> None:
+        assert _queryable_type(True) is None
+        assert _queryable_type(["string"]) is None
+
+
+class TestNormalizeInterval:
+    @pytest.mark.parametrize(
+        ("raw", "normalized"),
+        [
+            ("2026-06-01/..", "2026-06-01T00:00:00Z/.."),
+            ("../2026-06-30", "../2026-06-30T23:59:59Z"),
+            ("2026-06-15", "2026-06-15T00:00:00Z/2026-06-15T23:59:59Z"),
+            ("2026-06-15T12:00:00", "2026-06-15T12:00:00Z/2026-06-15T12:00:00Z"),
+            (
+                "2026-06-01T10:00:00Z/2026-06-02T10:00:00+02:00",
+                "2026-06-01T10:00:00Z/2026-06-02T10:00:00+02:00",  # offsets kept as-is
+            ),
+            ("2026-06-01T10:00:00/2026-06-30", "2026-06-01T10:00:00Z/2026-06-30T23:59:59Z"),
+            (
+                "2026-06-01T10:00:00-02:00/2026-06-02T10:00:00-02:00",
+                "2026-06-01T10:00:00-02:00/2026-06-02T10:00:00-02:00",  # negative offsets too
+            ),
+        ],
+    )
+    def test_bounds_expand_to_rfc3339_instants(self, raw: str, normalized: str) -> None:
+        assert _normalize_interval(raw) == normalized
+
+
+class TestDownloadIdFallbacks:
+    def test_uuid_from_alternate_asset_href(self) -> None:
+        item_doc = {
+            "id": "ITEM",
+            "assets": {
+                "B04": {
+                    "href": "s3://eodata/x/B04.jp2",
+                    "alternate": {"https": {"href": f"{BASE}/odata/v1/Products(alt-uuid)/$value"}},
+                }
+            },
+        }
+        assert _download_id(item_doc) == "alt-uuid"
+
+    @pytest.mark.parametrize("key", ["eodata:uuid", "odata:id", "uuid", "id"])
+    def test_uuid_from_properties(self, key: str) -> None:
+        item_doc = {"id": "ITEM", "assets": {}, "properties": {key: "prop-uuid"}}
+        assert _download_id(item_doc) == "prop-uuid"
+
+    def test_bare_item_id_is_last_resort(self) -> None:
+        assert _download_id({"id": "ITEM", "assets": {}, "properties": {}}) == "ITEM"
+
+
+class TestProductS3Path:
+    def test_alternate_s3_href_when_local_path_is_bare_filename(self) -> None:
+        primary = {
+            "href": f"{BASE}/odata/v1/Products(u)/$value",
+            "file:local_path": "product.zip",  # CDSE: just the zip name, not a path
+            "alternate": {"s3": {"href": "/eodata/Sentinel-2/product.SAFE"}},
+        }
+        item_doc = {"id": "ITEM", "assets": {"Product": primary}}
+        assert _product_s3_path(item_doc, primary) == "/eodata/Sentinel-2/product.SAFE"
+
+    def test_path_like_local_path_used_when_no_s3_hrefs(self) -> None:
+        primary = {
+            "href": f"{BASE}/odata/v1/Products(u)/$value",
+            "file:local_path": "/eodata/Sentinel-2/product.SAFE",
+        }
+        item_doc = {"id": "ITEM", "assets": {"Product": primary}}
+        assert _product_s3_path(item_doc, primary) == "/eodata/Sentinel-2/product.SAFE"
+
+    def test_no_s3_information_yields_none(self) -> None:
+        primary = {
+            "href": f"{BASE}/odata/v1/Products(u)/$value",
+            "file:local_path": "product.zip",
+        }
+        item_doc = {"id": "ITEM", "assets": {"Product": primary}}
+        assert _product_s3_path(item_doc, primary) is None
+
+    def test_sibling_files_sharing_a_name_stem_keep_whole_directory(self) -> None:
+        # commonprefix over these hrefs is ".../T33UUB_20260615_B0" — a cut
+        # through the filenames; the product root must stay a real directory.
+        item_doc = {
+            "id": "ITEM",
+            "assets": {
+                "B04": {"href": "s3://eodata/S2/x.SAFE/R10m/T33UUB_20260615_B04_10m.jp2"},
+                "B08": {"href": "s3://eodata/S2/x.SAFE/R10m/T33UUB_20260615_B08_10m.jp2"},
+            },
+        }
+        assert _product_s3_path(item_doc, {}) == "s3://eodata/S2/x.SAFE/R10m"
+
+    def test_single_s3_href_yields_its_directory(self) -> None:
+        item_doc = {"id": "ITEM", "assets": {"Z": {"href": "s3://eodata/S2/x.SAFE/manifest.xml"}}}
+        assert _product_s3_path(item_doc, {}) == "s3://eodata/S2/x.SAFE"
+
+    def test_hrefs_in_different_buckets_yield_none(self) -> None:
+        item_doc = {
+            "id": "ITEM",
+            "assets": {
+                "A": {"href": "s3://eodata-a/x/a.jp2"},
+                "B": {"href": "s3://eodata-b/x/b.jp2"},
+            },
+        }
+        assert _product_s3_path(item_doc, {}) is None

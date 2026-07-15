@@ -22,6 +22,10 @@ class TestMatrix:
         (s3,) = BUILTIN_MATRIX["s3"]
         assert s3.capabilities == {Capability.DOWNLOAD, Capability.LIST, Capability.OPEN}
 
+    def test_capability_str_is_its_wire_value(self) -> None:
+        """Error messages and discovery documents use the bare value, not Capability.X."""
+        assert [str(c) for c in Capability] == ["download", "list", "open"]
+
     def test_http_prefers_odata(self) -> None:
         chosen = select_strategy("http", Capability.DOWNLOAD, BUILTIN_MATRIX["http"], today=TODAY)
         assert chosen.name == "odata"

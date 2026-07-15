@@ -5,7 +5,7 @@ import httpx
 import pytest
 import respx
 
-from eosdk.catalogue.odata import ODataCatalogue
+from eosdk.catalogue.odata import ODataCatalogue, _entry_to_product, _parse_datetime
 from eosdk.catalogue.stac import _item_to_product
 from eosdk.exceptions import ProductNotFound, UnsupportedQueryFeature
 from eosdk.models import Query
@@ -159,6 +159,35 @@ class TestParity:
         assert from_stac.size == from_odata.size
         assert from_stac.cloud_cover == from_odata.cloud_cover
         assert from_stac.datetime == from_odata.datetime
+
+
+class TestEntryNormalizationEdgeCases:
+    @pytest.mark.parametrize("value", [None, ""])
+    def test_parse_datetime_missing_value(self, value: str | None) -> None:
+        assert _parse_datetime(value) is None
+
+    def test_parse_datetime_invalid_value(self) -> None:
+        assert _parse_datetime("not-a-timestamp") is None
+
+    def test_invalid_cloud_cover_degrades_to_none(self) -> None:
+        entry = odata_entry("u1", "P1", cloud=None)
+        entry["Attributes"] = [{"Name": "cloudCover", "Value": "n/a", "ValueType": "Double"}]
+        assert _entry_to_product(entry).cloud_cover is None
+
+    def test_s3_path_falls_back_to_locations(self) -> None:
+        entry = odata_entry("u1", "P1")
+        del entry["S3Path"]
+        entry["Locations"] = [
+            {"FormatType": "Zip", "S3Path": "/eodata/archive/P1.zip"},  # skipped: not extracted
+            {"FormatType": "Extracted", "Path": "/eodata/Sentinel-2/P1.SAFE"},
+        ]
+        assert _entry_to_product(entry).s3_path == "/eodata/Sentinel-2/P1.SAFE"
+
+    def test_no_s3_path_and_no_matching_location_yields_none(self) -> None:
+        entry = odata_entry("u1", "P1")
+        del entry["S3Path"]
+        entry["Locations"] = [{"FormatType": "Zip", "S3Path": "/eodata/archive/P1.zip"}]
+        assert _entry_to_product(entry).s3_path is None
 
 
 class TestCollectionsAndQueryables:

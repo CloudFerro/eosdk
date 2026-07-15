@@ -76,6 +76,14 @@ class TestUseAndProfiles:
         assert "staging" in result.output
         assert "(default)" in result.output
 
+    def test_profiles_empty_config_points_at_init(self, invoke_bare: Invoke) -> None:
+        result = invoke_bare("config", "profiles")
+        assert result.exit_code == 0
+        # rich folds the long tmp path; normalize whitespace before asserting
+        flat = " ".join(result.output.split())
+        assert "no profiles in" in flat
+        assert "run eo config init" in flat
+
 
 class TestInit:
     def test_init_platform_profile_loadable(self, invoke_bare: Invoke, tmp_path: Path) -> None:
@@ -98,3 +106,26 @@ class TestInit:
         result = invoke("config", "init", "--name", "test", "--platform", "https://p.example.eu")
         assert result.exit_code == 1
         assert "--force" in result.output
+
+    def test_init_prompts_for_platform_url(self, invoke_bare: Invoke, tmp_path: Path) -> None:
+        # no --platform: confirm the single-root question, then type the URL
+        result = invoke_bare(
+            "config", "init", "--name", "prod", input="y\nhttps://platform.example.eu\n"
+        )
+        assert result.exit_code == 0, result.output
+        config = tmp_path / "empty" / "config.toml"
+        resolved = load(env={}, cwd=tmp_path / "empty", user_config=config)
+        assert resolved.profile == "prod"
+        assert resolved.platform == "https://platform.example.eu"
+
+    def test_init_manual_endpoint_entry(self, invoke_bare: Invoke, tmp_path: Path) -> None:
+        # decline the platform root; fields prompt in sorted order — fill
+        # catalogue_stac (second) and leave the other five empty to skip them
+        answers = "n\n" + "\n" + "https://cat.example.eu/stac\n" + "\n" * 4
+        result = invoke_bare("config", "init", "--name", "manual", input=answers)
+        assert result.exit_code == 0, result.output
+        assert "Manual endpoint entry" in result.output
+        text = (tmp_path / "empty" / "config.toml").read_text()
+        assert 'catalogue_stac = "https://cat.example.eu/stac"' in text
+        assert "catalogue_odata" not in text
+        assert "platform" not in text

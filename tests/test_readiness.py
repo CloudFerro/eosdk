@@ -2,17 +2,28 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import httpx
 import pytest
 import respx
 
-from eosdk.readiness import ReadinessProbe
+from eosdk.readiness import ReadinessProbe, default_readiness_dir
 from eosdk.transport import Transport
 
 BASE = "https://download.example.eu"
 READY = f"{BASE}/ready"
+
+
+class TestDefaultReadinessDir:
+    def test_honours_xdg_config_home(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+        assert default_readiness_dir() == tmp_path / "xdg" / "eosdk" / "readiness"
+
+    def test_falls_back_to_home_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+        assert default_readiness_dir() == Path.home() / ".config" / "eosdk" / "readiness"
 
 
 @pytest.fixture
@@ -120,6 +131,51 @@ class TestReadinessProbe:
         after = probe.check(transport, BASE, service="eodata_http")
         assert after.ready and after.cached
         assert route.call_count == 2
+
+    @respx.mock
+    def test_429_verdict_is_recorded_and_throttled(
+        self, tmp_path: Path, transport: Transport
+    ) -> None:
+        # 429 is the strongest reason to record: the service is telling us to
+        # stop polling, so the not-ready verdict must be served from disk.
+        route = respx.get(READY).mock(
+            return_value=httpx.Response(429, headers={"Retry-After": "60"})
+        )
+        clock = FakeClock()
+        probe = ReadinessProbe(tmp_path, interval=300.0, now=clock)
+
+        first = probe.check(transport, BASE, service="eodata_http")
+        assert not first.ready and not first.cached
+        assert "quota exceeded" in first.detail
+        assert route.call_count == 1  # single-shot: no transport retry loop
+
+        clock.now += 10
+        second = probe.check(transport, BASE, service="eodata_http")
+        assert not second.ready and second.cached
+        assert route.call_count == 1
+
+    @respx.mock
+    def test_unwritable_store_still_returns_verdict(
+        self,
+        tmp_path: Path,
+        transport: Transport,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        # The verdict outranks the throttle bookkeeping: a full disk must not
+        # turn a successful probe into an error, and the temp file must go.
+        respx.get(READY).mock(return_value=httpx.Response(200))
+        probe = ReadinessProbe(tmp_path, interval=300.0, now=FakeClock())
+
+        def fail_replace(src: object, dst: object) -> None:
+            raise OSError("disk full")
+
+        monkeypatch.setattr("eosdk.readiness.os.replace", fail_replace)
+        with caplog.at_level(logging.WARNING, logger="eosdk.readiness"):
+            result = probe.check(transport, BASE, service="eodata_http")
+        assert result.ready and not result.cached
+        assert "could not persist readiness verdict" in caplog.text
+        assert list(tmp_path.glob("*.tmp")) == []  # failed write leaves no litter
 
     @respx.mock
     def test_clock_gone_backwards_reprobes(self, tmp_path: Path, transport: Transport) -> None:

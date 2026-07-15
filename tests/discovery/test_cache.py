@@ -121,3 +121,20 @@ class TestCache:
         cache.put(URL, spec_document())
         cache.invalidate(URL)
         assert cache.get(URL) is None
+
+    def test_failed_put_keeps_old_entry_and_leaves_no_temp(
+        self, cache: DiscoveryCache, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cache.put(URL, spec_document())
+
+        def boom(*args: object, **kwargs: object) -> None:
+            raise OSError("disk full")
+
+        monkeypatch.setattr(json, "dump", boom)
+        with pytest.raises(OSError, match="disk full"):
+            cache.put(URL, {"version": "1.1"})
+        monkeypatch.undo()
+        cached = cache.get(URL)
+        assert cached is not None
+        assert cached.raw == spec_document()  # previous document survives intact
+        assert list((tmp_path / "discovery").glob("*.tmp")) == []

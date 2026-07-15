@@ -12,8 +12,9 @@ from pydantic import SecretStr
 
 from eosdk.auth.s3_keys import S3Credentials
 from eosdk.eodata._transfer import state_path
+from eosdk.eodata.base import ProgressEvent
 from eosdk.eodata.s3 import RangedS3File, S3Downloader
-from eosdk.exceptions import DownloadError
+from eosdk.exceptions import DownloadError, ProductNotFound
 from eosdk.models import Checksum, Product
 from tests.eodata import safe_tree
 
@@ -91,6 +92,74 @@ class TestDownload:
         )
         with pytest.raises(DownloadError, match="checksum mismatch"):
             downloader.fetch(product, tmp_path)
+
+
+class TestAddressingAndErrors:
+    def test_product_without_s3_path_rejected(
+        self, downloader: S3Downloader, tmp_path: Path
+    ) -> None:
+        product = Product(id="uuid-nopath", name="NOPATH")  # e.g. built by hand, not from search
+        with pytest.raises(DownloadError, match="no S3 path"):
+            downloader.fetch(product, tmp_path)
+
+    def test_missing_object_maps_to_product_not_found(
+        self, downloader: S3Downloader, tmp_path: Path
+    ) -> None:
+        product = Product(
+            id="uuid-miss",
+            name="missing",
+            s3_path=f"/{safe_tree.BUCKET}/Sentinel-1/GRD/2026/07/nope.zip",
+        )
+        with pytest.raises(ProductNotFound, match="uuid-miss"):
+            downloader.fetch(product, tmp_path)
+
+    def test_non_404_head_error_propagates(self, downloader: S3Downloader, tmp_path: Path) -> None:
+        """Only 404-shaped errors become ProductNotFound; 403 etc. surface raw."""
+        from botocore.exceptions import ClientError
+
+        def denied(**kwargs: Any) -> Any:
+            raise ClientError({"Error": {"Code": "403", "Message": "Forbidden"}}, "HeadObject")
+
+        downloader._s3()
+        downloader._client.head_object = denied  # type: ignore[union-attr]
+        product = Product(
+            id="uuid-denied",
+            name="denied",
+            s3_path=f"/{safe_tree.BUCKET}/Sentinel-1/GRD/2026/07/nope.zip",
+        )
+        with pytest.raises(ClientError, match="403"):
+            downloader.fetch(product, tmp_path)
+
+    def test_list_denied_object_falls_back_to_head(
+        self, downloader: S3Downloader, tmp_path: Path
+    ) -> None:
+        """An object invisible to ListObjectsV2 is still fetched via HeadObject."""
+
+        class _NoListPaginator:
+            def paginate(self, **kwargs: Any) -> Any:
+                return iter([{}])  # no Contents at all
+
+        downloader._s3()
+        downloader._client.get_paginator = lambda name: _NoListPaginator()  # type: ignore[union-attr]
+        (report,) = downloader.fetch(single_product(), tmp_path)
+        assert (report.path / "product_A.zip").read_bytes() == SINGLE_PAYLOAD
+        assert report.checksum_verified is True
+        assert report.bytes == len(SINGLE_PAYLOAD)
+
+
+class TestProgress:
+    def test_event_sequence_monotonic(self, downloader: S3Downloader, tmp_path: Path) -> None:
+        events: list[ProgressEvent] = []
+        downloader.fetch(single_product(), tmp_path, progress=events.append)
+        kinds = [e.kind for e in events]
+        assert kinds[0] == "start"
+        assert kinds[-1] == "done"
+        assert set(kinds[1:-1]) == {"chunk"}
+        assert events[0].bytes_total == len(SINGLE_PAYLOAD)
+        chunk_bytes = [e.bytes_done for e in events if e.kind == "chunk"]
+        assert chunk_bytes == sorted(chunk_bytes)  # done counter never goes backwards
+        assert events[-1].bytes_done == len(SINGLE_PAYLOAD)
+        assert all(e.product_id == "uuid-single" for e in events)
 
 
 class TestResume:
@@ -197,6 +266,42 @@ class TestInterrupt:
         assert report.checksum_verified is True
         assert not state_path(file_path).exists()
 
+    def test_cancel_before_first_object_writes_nothing(
+        self, downloader: S3Downloader, tmp_path: Path
+    ) -> None:
+        """A product cancelled while queued aborts before touching the disk."""
+        cancel = threading.Event()
+        cancel.set()
+        with pytest.raises(DownloadError, match="interrupted"):
+            downloader._fetch_one(
+                safe_product(), tmp_path, resume=True, checksum=True, progress=None, cancel=cancel
+            )
+        assert not (tmp_path / safe_tree.PRODUCT_NAME).exists()
+
+    def test_keyboard_interrupt_cancels_queued_products(
+        self, downloader: S3Downloader, tmp_path: Path, s3: Any
+    ) -> None:
+        """Ctrl+C during a ranged GET re-raises and drops the queued product."""
+        product_a = single_product(with_checksum=False)
+        product_b = product_a.model_copy(update={"id": "uuid-b", "name": "product_B"})
+        original = downloader._s3().get_object
+        calls: list[int] = []
+        gate = threading.Lock()
+
+        def interrupting_get_object(**kwargs: Any) -> Any:
+            with gate:
+                calls.append(1)
+                first = len(calls) == 1
+            if first:
+                raise KeyboardInterrupt  # stands in for Ctrl+C reaching a worker
+            return original(**kwargs)
+
+        downloader._client.get_object = interrupting_get_object  # type: ignore[union-attr]
+        with pytest.raises(KeyboardInterrupt):
+            downloader.fetch([product_a, product_b], tmp_path, concurrency=1)
+        assert not (tmp_path / "product_B").exists()  # queued product never started
+        assert not (tmp_path / "product_A" / "product_A.zip").exists()  # no final file
+
 
 class TestList:
     def test_single_level_root(self, downloader: S3Downloader) -> None:
@@ -237,6 +342,34 @@ class TestList:
         recursive_files = {n.path for n in downloader.list(product, recursive=True) if not n.is_dir}
         assert collected == recursive_files
 
+    MARKER_PREFIX = "Sentinel-3/OLCI/2026/07/PRODUCT_M.SEN3"
+
+    def marker_product(self, s3: Any) -> Product:
+        """A product whose prefix carries zero-byte folder-marker objects."""
+        s3.put_object(Bucket=safe_tree.BUCKET, Key=f"{self.MARKER_PREFIX}/", Body=b"")
+        s3.put_object(Bucket=safe_tree.BUCKET, Key=f"{self.MARKER_PREFIX}/EMPTY_DIR/", Body=b"")
+        s3.put_object(Bucket=safe_tree.BUCKET, Key=f"{self.MARKER_PREFIX}/data.nc", Body=b"netcdf")
+        return Product(
+            id="uuid-marker",
+            name="PRODUCT_M.SEN3",
+            s3_path=f"/{safe_tree.BUCKET}/{self.MARKER_PREFIX}",
+        )
+
+    def test_folder_markers_never_listed_as_files(self, downloader: S3Downloader, s3: Any) -> None:
+        product = self.marker_product(s3)
+        by_path = {n.path: n for n in downloader.list(product)}
+        assert set(by_path) == {"EMPTY_DIR", "data.nc"}  # the root marker itself is hidden
+        assert by_path["EMPTY_DIR"].is_dir is True  # zero-byte marker derives a directory
+        assert by_path["data.nc"].is_dir is False
+
+    def test_folder_markers_skipped_in_recursive_walk(
+        self, downloader: S3Downloader, s3: Any
+    ) -> None:
+        product = self.marker_product(s3)
+        nodes = downloader.list(product, recursive=True)
+        assert {n.path for n in nodes if not n.is_dir} == {"data.nc"}
+        assert all(not n.path.endswith("/") for n in nodes)  # no marker leaks into paths
+
 
 class TestOpen:
     B04 = "GRANULE/L2A_T34UEE_A012345_20260615T095030/IMG_DATA/R10m/T34UEE_B04_10m.jp2"
@@ -275,6 +408,29 @@ class TestOpen:
     def test_missing_path_raises(self, downloader: S3Downloader) -> None:
         with pytest.raises(DownloadError, match="no such file"):
             downloader.open(safe_product(), "GRANULE/nope.xml")
+
+    def test_non_404_error_on_open_propagates(self, downloader: S3Downloader) -> None:
+        from botocore.exceptions import ClientError
+
+        def denied(**kwargs: Any) -> Any:
+            raise ClientError({"Error": {"Code": "403", "Message": "Forbidden"}}, "HeadObject")
+
+        downloader._s3()
+        downloader._client.head_object = denied  # type: ignore[union-attr]
+        with pytest.raises(ClientError, match="403"):
+            downloader.open(safe_product(), self.B04)
+
+    def test_seek_cur_and_capability_flags(self, downloader: S3Downloader) -> None:
+        content = safe_tree.FILES[self.B04]
+        with downloader.open(safe_product(), self.B04) as fh:
+            assert fh.readable() is True
+            assert fh.seekable() is True
+            fh.seek(10)
+            fh.seek(-4, os.SEEK_CUR)
+            assert fh.tell() == 6
+            assert fh.read(2) == content[6:8]
+            fh.seek(-100, os.SEEK_CUR)  # relative seek before byte 0 clamps to 0
+            assert fh.tell() == 0
 
     def test_is_raw_io_base(self, downloader: S3Downloader) -> None:
         import io

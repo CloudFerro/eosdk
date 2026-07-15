@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from eosdk.exceptions import ConfigError, EosdkError
+from eosdk.exceptions import ConfigError, EosdkError, UnsupportedApiVersion
 from eosdk.transport import route
 
 if TYPE_CHECKING:
@@ -242,11 +242,11 @@ def _discovery_section(client: Client) -> Section:
             section.results.append(
                 CheckResult(f"{service_key} api", True, f"advertised {advertised} is supported")
             )
-    except EosdkError as exc:
+    except UnsupportedApiVersion as exc:
         section.results.append(
             CheckResult("api versions", False, str(exc), hint="upgrade eosdk or pin the URL")
         )
-    except Exception:  # document unreachable: already reported above
+    except EosdkError:  # document unreachable: already reported above
         pass
     return section
 

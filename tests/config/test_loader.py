@@ -152,6 +152,67 @@ class TestDiscoveryPending:
             cfg.require("eodata_http", service="eodata_http")
 
 
+class StubDiscovery:
+    """DiscoveryHook double: serves a fixed field->URL mapping, records calls."""
+
+    def __init__(self, mapping: dict[str, str]) -> None:
+        self.mapping = mapping
+        self.calls: list[str] = []
+
+    def resolve(self, platform: str) -> dict[str, str]:
+        self.calls.append(platform)
+        return self.mapping
+
+
+class TestDiscoveryHook:
+    """Precedence step 5: values a live discovery hook returns fill pending fields."""
+
+    DISCOVERED = "https://discovered.example.eu"
+
+    def test_discovered_value_fills_pending_field(self, tmp_path: Path, missing: Path) -> None:
+        hook = StubDiscovery({"eodata_http": f"{self.DISCOVERED}/", "s3_region": "waw3-1"})
+        cfg = load(
+            platform="https://p.example.eu",
+            env={},
+            cwd=tmp_path,
+            user_config=missing,
+            discovery=hook,
+        )
+        assert hook.calls == ["https://p.example.eu"]
+        assert cfg.endpoints.eodata_http == self.DISCOVERED  # URL-validated, "/" trimmed
+        assert cfg.sources["eodata_http"].source == "discovery"
+        assert cfg.endpoints.s3_region == "waw3-1"  # non-URL field passes through
+        assert cfg.resolved()["catalogue_stac"].display == PENDING  # not advertised
+
+    def test_local_pin_beats_discovered_value(self, tmp_path: Path, missing: Path) -> None:
+        hook = StubDiscovery({"eodata_http": self.DISCOVERED})
+        cfg = load(
+            platform="https://p.example.eu",
+            env={"EOSDK_EODATA_HTTP_URL": ENV_URL},
+            cwd=tmp_path,
+            user_config=missing,
+            discovery=hook,
+        )
+        assert cfg.endpoints.eodata_http == ENV_URL
+
+    def test_invalid_discovered_url_rejected(self, tmp_path: Path, missing: Path) -> None:
+        hook = StubDiscovery({"eodata_http": "not a url"})
+        with pytest.raises(ConfigError, match="discovery"):
+            load(
+                platform="https://p.example.eu",
+                env={},
+                cwd=tmp_path,
+                user_config=missing,
+                discovery=hook,
+            )
+
+    def test_hook_not_consulted_without_platform(self, tmp_path: Path, missing: Path) -> None:
+        hook = StubDiscovery({"eodata_http": self.DISCOVERED})
+        cfg = load(env={}, cwd=tmp_path, user_config=missing, discovery=hook)
+        assert hook.calls == []
+        assert cfg.endpoints.eodata_http is None
+
+
 class TestValidation:
     def test_bad_env_url_names_env_var(self, tmp_path: Path, missing: Path) -> None:
         with pytest.raises(ConfigError, match="EOSDK_EODATA_HTTP_URL"):
@@ -160,6 +221,11 @@ class TestValidation:
     def test_malformed_toml_names_file(self, tmp_path: Path, missing: Path) -> None:
         write(tmp_path / "eosdk.toml", "definitely [not toml")
         with pytest.raises(ConfigError, match=r"eosdk\.toml"):
+            load(env={}, cwd=tmp_path, user_config=missing)
+
+    def test_valid_toml_bad_schema_names_file(self, tmp_path: Path, missing: Path) -> None:
+        write(tmp_path / "eosdk.toml", "banana = 1\n")  # unknown top-level key
+        with pytest.raises(ConfigError, match=r"invalid config file .*eosdk\.toml"):
             load(env={}, cwd=tmp_path, user_config=missing)
 
     def test_unknown_kwarg_endpoint(self, tmp_path: Path, missing: Path) -> None:

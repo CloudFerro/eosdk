@@ -9,6 +9,7 @@ import pytest
 import respx
 
 from eosdk.eodata.http import HttpDownloader
+from eosdk.exceptions import ProductNotFound
 from eosdk.models import Product
 from eosdk.transport import RetryPolicy, Transport
 from tests.eodata import safe_tree
@@ -138,6 +139,16 @@ class TestRecursive:
         downloader.list(PRODUCT, recursive=False)
         child_requests = sum(r.call_count for path, r in routes.items() if path)
         assert child_requests == 0
+
+
+class TestListErrors:
+    @respx.mock
+    def test_missing_product_maps_to_product_not_found(self, downloader: HttpDownloader) -> None:
+        respx.get(url__eq=f"{BASE}/odata/v1/Products(uuid-safe)/Nodes").mock(
+            return_value=httpx.Response(404)
+        )
+        with pytest.raises(ProductNotFound, match="uuid-safe"):
+            downloader.list(PRODUCT)
 
 
 class TestCrossBackendParity:

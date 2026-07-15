@@ -8,9 +8,9 @@ import httpx
 import pytest
 import respx
 
-from eosdk.eodata.base import ProgressEvent
+from eosdk.eodata.base import BaseDownloader, ProgressEvent
 from eosdk.eodata.http import HttpDownloader
-from eosdk.exceptions import DownloadError, ProductNotFound
+from eosdk.exceptions import DownloadError, ProductNotFound, QuotaExceeded
 from eosdk.models import Checksum, Product
 from eosdk.transport import RetryPolicy, Transport
 
@@ -128,6 +128,41 @@ class TestChecksum:
         respx.get(value_url("uuid-1")).mock(return_value=httpx.Response(200, content=b"corrupted"))
         with pytest.raises(DownloadError, match="checksum mismatch"):
             downloader.fetch(product(), tmp_path)
+        assert not list(tmp_path.iterdir())
+
+
+class TestQuota:
+    @respx.mock
+    def test_429_maps_to_quota_exceeded(self, tmp_path: Path) -> None:
+        """The backend maps 429 even when transport-level 429 retries are off."""
+        policy = RetryPolicy(jitter=False, retry_statuses=frozenset())
+        with Transport(retry=policy, sleep=lambda _: None) as transport:
+            quota_downloader = HttpDownloader(BASE, transport=transport, auth=FakeAuth())
+            respx.get(value_url("uuid-1")).mock(return_value=httpx.Response(429))
+            with pytest.raises(QuotaExceeded) as exc_info:
+                quota_downloader.fetch(product(), tmp_path)
+        assert exc_info.value.service == "eodata_http"
+        assert not list(tmp_path.iterdir())  # nothing written before the quota error
+
+
+class TestBaseDownloader:
+    def test_open_stream_is_abstract(self) -> None:
+        with pytest.raises(NotImplementedError):
+            BaseDownloader()._open_stream(product())
+
+    @respx.mock
+    def test_queued_product_cancelled_before_start(
+        self, downloader: HttpDownloader, tmp_path: Path
+    ) -> None:
+        """A product whose worker starts after Ctrl+C aborts without any request."""
+        route = respx.get(value_url("uuid-1")).mock(return_value=ok_response())
+        cancel = threading.Event()
+        cancel.set()
+        with pytest.raises(DownloadError, match="interrupted"):
+            downloader._fetch_one(
+                product(), tmp_path, resume=False, checksum=True, progress=None, cancel=cancel
+            )
+        assert route.call_count == 0  # never hit the network
         assert not list(tmp_path.iterdir())
 
 

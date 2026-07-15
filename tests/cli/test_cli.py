@@ -1,12 +1,18 @@
 import json
+import runpy
+import sys
+import types
 from pathlib import Path
 
+import httpx
 import pytest
 import respx
 
 from eosdk.models import Product
 from tests.cli.conftest import Invoke
-from tests.conftest import PAYLOAD
+from tests.conftest import FIXTURES, KEYCLOAK, PAYLOAD
+
+DEVICE_URL = f"{KEYCLOAK}/realms/eodata/protocol/openid-connect/auth/device"
 
 
 class TestAuth:
@@ -16,6 +22,49 @@ class TestAuth:
         )
         assert result.exit_code == 0, result.output
         assert "Logged in" in result.output
+        token_calls = [c for c in platform_mocks.calls if c.request.url.path.endswith("/token")]
+        assert b"username=alice" in token_calls[-1].request.content
+
+    def test_device_flow_is_default_and_prints_code(
+        self, invoke: Invoke, platform_mocks: respx.Router, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from eosdk.auth.keycloak import KeycloakAuth
+
+        # the flow sleeps `interval` seconds before each poll; don't in tests
+        monkeypatch.setitem(KeycloakAuth.__init__.__kwdefaults__, "sleep", lambda _s: None)
+        platform_mocks.post(DEVICE_URL).mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "device_code": "DEV123",
+                    "user_code": "ABCD-EFGH",
+                    "verification_uri": "https://auth.example.eu/device",
+                    "verification_uri_complete": (
+                        "https://auth.example.eu/device?user_code=ABCD-EFGH"
+                    ),
+                    "expires_in": 600,
+                    "interval": 5,
+                },
+            )
+        )
+        result = invoke("auth", "login")  # no --username -> device flow
+        assert result.exit_code == 0, result.output
+        assert "Device login" in result.output
+        assert "ABCD-EFGH" in result.output
+        assert "Logged in" in result.output
+
+    def test_password_login_prompts_for_username(
+        self, invoke: Invoke, platform_mocks: respx.Router
+    ) -> None:
+        # without a device endpoint the realm forces the username/password path
+        oidc = json.loads((FIXTURES / "keycloak_openid_configuration.json").read_text())
+        del oidc["device_authorization_endpoint"]
+        platform_mocks.get(f"{KEYCLOAK}/realms/eodata/.well-known/openid-configuration").mock(
+            return_value=httpx.Response(200, json=oidc)
+        )
+        result = invoke("auth", "login", "--password", "pw", input="alice\n")
+        assert result.exit_code == 0, result.output
+        assert "Username" in result.output
         token_calls = [c for c in platform_mocks.calls if c.request.url.path.endswith("/token")]
         assert b"username=alice" in token_calls[-1].request.content
 
@@ -106,6 +155,31 @@ class TestSearch:
         assert result.exit_code == 1
         assert "unbounded" in result.output
 
+    def test_non_numeric_bbox_usage_error(self, invoke: Invoke) -> None:
+        result = invoke("search", "--collection", "X", "--bbox", "a,2,3,4")
+        assert result.exit_code == 2
+        assert "non-numeric" in result.output
+
+    def test_filter_without_equals_rejected(self, invoke: Invoke) -> None:
+        result = invoke("search", "--collection", "X", "--filter", "cloudCover")
+        assert result.exit_code == 2
+        assert "key=value" in result.output
+
+    def test_format_s3_warns_about_missing_paths(
+        self, invoke: Invoke, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from eosdk.client import Client
+
+        products = [
+            Product(id="uuid-a", name="PRODUCT_A", s3_path="s3://eodata/x/PRODUCT_A.SAFE"),
+            Product(id="uuid-b", name="PRODUCT_B"),  # no S3 path
+        ]
+        monkeypatch.setattr(Client, "search", lambda self, **kwargs: products)
+        result = invoke("search", "--collection", "SENTINEL-2", "--format", "s3")
+        assert result.exit_code == 0, result.output
+        assert "s3://eodata/x/PRODUCT_A.SAFE" in result.output
+        assert "skipped 1 product(s) without an S3 path" in result.output
+
 
 class TestDownload:
     def test_pipe_search_into_download(
@@ -166,6 +240,75 @@ class TestDownload:
         assert result.exit_code == 2
         assert "looks like a local path" in result.output
 
+    def test_option_looking_id_is_rejected(self, invoke: Invoke) -> None:
+        # `--` makes click pass the token through as a positional product id
+        result = invoke("download", "--", "--oops")
+        assert result.exit_code == 2
+        assert "looks like an option, not a product id" in result.output
+
+    def test_no_ids_is_usage_error(self, invoke: Invoke) -> None:
+        result = invoke("download")
+        assert result.exit_code == 2
+        assert "give product ids or '-' for stdin" in result.output
+
+    def test_empty_stdin_is_usage_error(self, invoke: Invoke) -> None:
+        result = invoke("download", "-", input="")
+        assert result.exit_code == 2
+        assert "nothing on stdin" in result.output
+
+    def test_s3_path_args_build_product_stubs(
+        self, invoke: Invoke, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from eosdk.client import Client
+
+        captured: dict[str, object] = {}
+
+        def fake_download(self: Client, products: list[Product], **kwargs: object) -> list[object]:
+            captured["products"] = list(products)
+            captured["via"] = kwargs.get("via")
+            return []
+
+        monkeypatch.setattr(Client, "download", fake_download)
+        result = invoke(
+            "download",
+            "s3://eodata/x/PRODUCT_A.SAFE",
+            "/eodata/y/PRODUCT_B.SAFE/",
+            "--via",
+            "s3",
+            "-o",
+            str(tmp_path / "d"),
+        )
+        assert result.exit_code == 0, result.output
+        assert captured["via"] == "s3"
+        products = captured["products"]
+        assert isinstance(products, list)
+        assert [(p.id, p.name, p.s3_path) for p in products] == [
+            ("PRODUCT_A.SAFE", "PRODUCT_A.SAFE", "s3://eodata/x/PRODUCT_A.SAFE"),
+            ("PRODUCT_B.SAFE", "PRODUCT_B.SAFE", "/eodata/y/PRODUCT_B.SAFE/"),
+        ]
+
+    def test_interactive_progress_on_tty(
+        self,
+        invoke: Invoke,
+        platform_mocks: respx.Router,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A tty stderr flips on the Rich progress bar; the download still lands."""
+        from eosdk.cli.commands import download as download_module
+
+        monkeypatch.setattr(
+            download_module,
+            "sys",
+            types.SimpleNamespace(stderr=types.SimpleNamespace(isatty=lambda: True)),
+        )
+        invoke("auth", "login", "--username", "alice", "--password-stdin", input="pw\n")
+        out_dir = tmp_path / "data"
+        result = invoke("download", "uuid-a", "-o", str(out_dir))
+        assert result.exit_code == 0, result.output
+        assert (out_dir / "uuid-a.zip").read_bytes() == PAYLOAD
+        assert "done" in result.output
+
     def test_stdin_accepts_json_array(
         self, invoke: Invoke, platform_mocks: respx.Router, tmp_path: Path
     ) -> None:
@@ -208,6 +351,20 @@ class TestDownload:
         assert result.exit_code == 130
         assert "stopped" in result.output
         assert "0 of 1 product(s)" in result.output
+
+
+class TestEntryPoint:
+    # runpy warns that the module is already imported; expected when re-running it
+    @pytest.mark.filterwarnings("ignore:.*eosdk.cli.main.*:RuntimeWarning")
+    def test_python_m_runs_the_app(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """`python -m eosdk.cli.main --help` reaches the __main__ guard."""
+        monkeypatch.setattr(sys, "argv", ["eo", "--help"])
+        with pytest.raises(SystemExit) as excinfo:
+            runpy.run_module("eosdk.cli.main", run_name="__main__")
+        assert excinfo.value.code == 0
+        assert "search" in capsys.readouterr().out
 
 
 class TestErrors:

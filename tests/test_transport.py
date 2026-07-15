@@ -26,6 +26,10 @@ class TestRoute:
         with pytest.raises(ValueError, match="unknown"):
             route(BASE, "Products", id="x")
 
+    def test_positional_placeholder_rejected(self) -> None:
+        with pytest.raises(ValueError, match="positional"):
+            route(BASE, "Products({})")
+
     def test_no_double_slash(self) -> None:
         assert route(BASE + "/", "/stac/search") == f"{BASE}/stac/search"
 
@@ -75,6 +79,21 @@ def test_post_not_retried_by_default() -> None:
 
 
 @respx.mock
+def test_429_on_post_raises_quota_without_retrying() -> None:
+    # STAC search is a POST: the taxonomy mapping must not depend on the
+    # method being retryable (SPEC §8), only the retry loop is.
+    mock = respx.post(f"{BASE}/search").mock(
+        return_value=httpx.Response(429, headers={"Retry-After": "7"})
+    )
+    t = make_transport()
+    with pytest.raises(QuotaExceeded) as exc_info:
+        t.request("POST", f"{BASE}/search", service="catalogue_stac")
+    assert exc_info.value.retry_after == 7.0
+    assert mock.call_count == 1
+    assert t.slept == []  # type: ignore[attr-defined]
+
+
+@respx.mock
 def test_429_honors_retry_after_then_raises_quota() -> None:
     respx.get(f"{BASE}/x").mock(return_value=httpx.Response(429, headers={"Retry-After": "7"}))
     t = make_transport()
@@ -84,6 +103,31 @@ def test_429_honors_retry_after_then_raises_quota() -> None:
     assert all(s >= 7.0 for s in t.slept)  # type: ignore[attr-defined]
     assert len(t.slept) == t.retry.attempts - 1  # type: ignore[attr-defined]
     assert "eodata_http" in str(exc_info.value)
+
+
+@respx.mock
+def test_429_without_retry_after_uses_backoff() -> None:
+    respx.get(f"{BASE}/x").mock(return_value=httpx.Response(429))
+    t = make_transport()
+    with pytest.raises(QuotaExceeded) as exc_info:
+        t.request("GET", f"{BASE}/x", service="svc")
+    assert exc_info.value.retry_after is None
+    expected = [t.retry.backoff(n) for n in range(1, t.retry.attempts)]
+    assert t.slept == expected  # type: ignore[attr-defined]
+
+
+@respx.mock
+def test_429_http_date_retry_after_falls_back_to_backoff() -> None:
+    # RFC 9110 allows an HTTP-date Retry-After; we don't parse it, we back off.
+    respx.get(f"{BASE}/x").mock(
+        return_value=httpx.Response(429, headers={"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"})
+    )
+    t = make_transport()
+    with pytest.raises(QuotaExceeded) as exc_info:
+        t.request("GET", f"{BASE}/x", service="svc")
+    assert exc_info.value.retry_after is None
+    expected = [t.retry.backoff(n) for n in range(1, t.retry.attempts)]
+    assert t.slept == expected  # type: ignore[attr-defined]
 
 
 @respx.mock
@@ -116,6 +160,25 @@ def test_stream_yields_and_closes() -> None:
     assert response.is_closed
 
 
+@respx.mock
+def test_stream_retries_transient_status_and_closes_failed_attempt() -> None:
+    mock = respx.get(f"{BASE}/big").mock(
+        side_effect=[httpx.Response(503), httpx.Response(200, content=b"payload")]
+    )
+    with make_transport() as t, t.stream("GET", f"{BASE}/big", service="svc") as response:
+        assert response.read() == b"payload"
+    assert mock.call_count == 2
+
+
+@respx.mock
+def test_stream_persistent_429_raises_quota() -> None:
+    respx.get(f"{BASE}/big").mock(return_value=httpx.Response(429, headers={"Retry-After": "3"}))
+    t = make_transport()
+    with pytest.raises(QuotaExceeded) as exc_info, t.stream("GET", f"{BASE}/big", service="svc"):
+        pytest.fail("stream body must not run when the quota is exhausted")
+    assert exc_info.value.retry_after == 3.0
+
+
 def test_verify_false_warns() -> None:
     with pytest.warns(UserWarning, match="TLS verification is disabled"):
         Transport(verify=False).close()
@@ -124,3 +187,11 @@ def test_verify_false_warns() -> None:
 def test_backoff_is_exponential_and_capped() -> None:
     policy = RetryPolicy(backoff_base=1.0, backoff_max=4.0, jitter=False)
     assert [policy.backoff(n) for n in (1, 2, 3, 4)] == [1.0, 2.0, 4.0, 4.0]
+
+
+def test_backoff_jitter_stays_within_half_to_full_delay() -> None:
+    policy = RetryPolicy(backoff_base=1.0, backoff_max=4.0, jitter=True)
+    for attempt, ceiling in ((1, 1.0), (2, 2.0), (3, 4.0)):
+        for _ in range(50):
+            delay = policy.backoff(attempt)
+            assert ceiling / 2 <= delay <= ceiling

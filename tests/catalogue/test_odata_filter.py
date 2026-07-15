@@ -19,9 +19,10 @@ GOLDEN: list[tuple[Query, str]] = [
         "Collection/Name eq 'O''Brien Collection'",
     ),
     (
+        # a bare end date covers its whole day, matching the STAC backend
         Query(datetime="2026-06-01/2026-06-30"),
         "ContentDate/Start ge 2026-06-01T00:00:00.000Z"
-        " and ContentDate/Start le 2026-06-30T00:00:00.000Z",
+        " and ContentDate/Start le 2026-06-30T23:59:59.999Z",
     ),
     (
         Query(datetime="2026-06-01/.."),
@@ -30,6 +31,22 @@ GOLDEN: list[tuple[Query, str]] = [
     (
         Query(datetime="../2026-06-30T12:00:00"),
         "ContentDate/Start le 2026-06-30T12:00:00Z",
+    ),
+    (
+        Query(datetime="2026-06-15T12:00:00Z"),  # single instant: both bounds
+        "ContentDate/Start ge 2026-06-15T12:00:00Z and ContentDate/Start le 2026-06-15T12:00:00Z",
+    ),
+    (
+        # a bare single date means the whole day, not midnight only
+        Query(datetime="2026-06-15"),
+        "ContentDate/Start ge 2026-06-15T00:00:00.000Z"
+        " and ContentDate/Start le 2026-06-15T23:59:59.999Z",
+    ),
+    (
+        # explicit UTC offsets (either sign) pass through unmangled
+        Query(datetime="2026-06-01T10:00:00-02:00/2026-06-30T10:00:00+02:00"),
+        "ContentDate/Start ge 2026-06-01T10:00:00-02:00"
+        " and ContentDate/Start le 2026-06-30T10:00:00+02:00",
     ),
     (
         Query(bbox=(22.5, 52.9, 24.0, 53.5)),

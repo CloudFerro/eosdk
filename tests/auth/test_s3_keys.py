@@ -2,6 +2,7 @@
 # (https://s3-keys-manager.cloudferro.com/api/user/docs, v1.8.x):
 # GET/POST /credentials, DELETE /credentials/access_id/{access_id}.
 
+import datetime as dt
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -10,7 +11,12 @@ import httpx
 import pytest
 import respx
 
-from eosdk.auth.s3_keys import S3KeysProvider
+from eosdk.auth.s3_keys import (
+    S3Credentials,
+    S3KeysProvider,
+    _SecretStore,
+    default_s3keys_dir,
+)
 from eosdk.exceptions import AuthError, S3KeyLimitReached
 from eosdk.transport import RetryPolicy, Transport
 
@@ -66,6 +72,48 @@ def provider(tmp_path: Path) -> Iterator[S3KeysProvider]:
             profile="test",
             cache_dir=tmp_path / "s3keys",
         )
+
+
+class TestS3Credentials:
+    def test_key_id_is_the_access_key(self) -> None:
+        assert S3Credentials(access_key="AKIA001").key_id == "AKIA001"
+
+    def test_no_expiration_date_never_expires(self) -> None:
+        assert S3Credentials(access_key="A").expired() is False
+        assert S3Credentials(access_key="A", expiration_date="").expired() is False
+
+    def test_unparseable_expiration_treated_as_live(self) -> None:
+        # A malformed date from the service must not silently discard a key.
+        creds = S3Credentials(access_key="A", expiration_date="not-a-date")
+        assert creds.expired() is False
+
+    def test_naive_expiration_assumed_utc(self) -> None:
+        creds = S3Credentials(access_key="A", expiration_date="2026-01-01T00:00:00")
+        after = dt.datetime(2026, 6, 1, tzinfo=dt.timezone.utc)
+        before = dt.datetime(2025, 6, 1, tzinfo=dt.timezone.utc)
+        assert creds.expired(now=after) is True
+        assert creds.expired(now=before) is False
+
+
+class TestDefaultS3KeysDir:
+    def test_honours_xdg_config_home(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+        assert default_s3keys_dir() == tmp_path / "xdg" / "eosdk" / "s3keys"
+
+    def test_falls_back_to_home_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+        assert default_s3keys_dir() == Path.home() / ".config" / "eosdk" / "s3keys"
+
+
+class TestSecretStore:
+    def test_failed_save_keeps_old_entries_and_leaves_no_temp_file(self, tmp_path: Path) -> None:
+        store = _SecretStore(tmp_path, "test")
+        store.put("my-pipeline", "AKIA001", "secret")
+        broken: Any = {"my-pipeline": {"secret_key": b"bytes are not JSON"}}
+        with pytest.raises(TypeError):
+            store.save(broken)
+        assert store.get("my-pipeline") == {"access_id": "AKIA001", "secret_key": "secret"}
+        assert list(tmp_path.glob("*.tmp")) == []  # temp file cleaned up
 
 
 class TestCreateListRevoke:
@@ -166,6 +214,16 @@ class TestKeyLimit:
         )
         with pytest.raises(AuthError, match="400"):
             provider.revoke("AKIA001")
+
+    @respx.mock
+    def test_limit_wording_on_5xx_stays_auth_error(self, provider: S3KeysProvider) -> None:
+        # The cap answers 400/403/409; a 5xx that happens to echo the wording
+        # is a server fault, not the key cap.
+        respx.post(CREDENTIALS_URL).mock(
+            return_value=httpx.Response(500, json={"detail": "max number of credentials reached"})
+        )
+        with pytest.raises(AuthError, match="500"):
+            provider.create()
 
     @respx.mock
     def test_get_or_create_reuses_without_create_at_cap(self, provider: S3KeysProvider) -> None:

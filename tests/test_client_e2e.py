@@ -118,3 +118,60 @@ def test_odata_protocol_requires_endpoint(client: Client) -> None:
 def test_unknown_protocol_rejected(client: Client) -> None:
     with pytest.raises(ConfigError, match="unknown catalogue protocol"):
         client.search(collection="S1", protocol="carrier-pigeon")
+
+
+class TestCatalogueDelegation:
+    """get/collections/queryables route through _catalogue, incl. plugin protocols."""
+
+    @pytest.fixture
+    def plugin_client(self, client: Client, monkeypatch: pytest.MonkeyPatch) -> Client:
+        from types import SimpleNamespace
+
+        from eosdk.models import Collection, Product, Queryable
+        from eosdk.plugins import PluginSpec
+
+        class FakeCatalogue:
+            def get(self, product_id: str) -> Product:
+                return Product(id=product_id, name=f"FAKE_{product_id}")
+
+            def collections(self) -> list[Collection]:
+                return [Collection(id="FAKE-COLLECTION", title="Fake")]
+
+            def queryables(self, collection: str) -> list[Queryable]:
+                return [Queryable(name="cloudCover", type="number", raw={"for": collection})]
+
+        plugin = PluginSpec(name="fake", kind="catalogue", factory=lambda c: FakeCatalogue())
+        monkeypatch.setattr(
+            "eosdk.plugins.entry_points",
+            lambda group: [SimpleNamespace(name="fake", value="fake", load=lambda: plugin)],
+        )
+        return client
+
+    def test_get_dispatches_to_plugin_catalogue(self, plugin_client: Client) -> None:
+        product = plugin_client.get("uuid-x", protocol="fake")
+        assert product.id == "uuid-x"
+        assert product.name == "FAKE_uuid-x"
+
+    def test_collections_dispatches_to_plugin_catalogue(self, plugin_client: Client) -> None:
+        (collection,) = plugin_client.collections(protocol="fake")
+        assert collection.id == "FAKE-COLLECTION"
+
+    def test_queryables_dispatches_to_plugin_catalogue(self, plugin_client: Client) -> None:
+        (queryable,) = plugin_client.queryables("SENTINEL-2", protocol="fake")
+        assert queryable.name == "cloudCover"
+        assert queryable.raw == {"for": "SENTINEL-2"}
+
+    def test_downloader_plugin_never_serves_catalogue_protocol(
+        self, client: Client, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from types import SimpleNamespace
+
+        from eosdk.plugins import PluginSpec
+
+        plugin = PluginSpec(name="dl", kind="downloader", factory=lambda c: object())
+        monkeypatch.setattr(
+            "eosdk.plugins.entry_points",
+            lambda group: [SimpleNamespace(name="dl", value="dl", load=lambda: plugin)],
+        )
+        with pytest.raises(ConfigError, match="unknown catalogue protocol"):
+            client.collections(protocol="dl")

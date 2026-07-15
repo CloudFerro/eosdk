@@ -337,7 +337,7 @@ def _normalize_interval(value: str) -> str:
             return ".."
         if "T" not in ts:
             return f"{ts}T23:59:59Z" if end else f"{ts}T00:00:00Z"
-        return ts if ts.endswith("Z") or "+" in ts[10:] else f"{ts}Z"
+        return ts if ts.endswith("Z") or "+" in ts[10:] or "-" in ts[10:] else f"{ts}Z"
 
     if "/" in value:
         start, _, end = value.partition("/")
@@ -429,10 +429,12 @@ def _product_s3_path(item: dict[str, Any], primary: dict[str, Any]) -> str | Non
         if str(asset.get("href", "")).startswith("s3://")
     ]
     if s3_hrefs:
-        prefix = os.path.commonprefix(s3_hrefs)
-        if len(s3_hrefs) == 1:
-            prefix = prefix.rsplit("/", 1)[0]  # a single file: its directory
-        return prefix.rstrip("/") or None
+        # commonprefix is character-wise: sibling files sharing a name stem
+        # yield a prefix that cuts mid-filename — trim to a whole component.
+        prefix = os.path.commonprefix(s3_hrefs).rsplit("/", 1)[0].rstrip("/")
+        if len(prefix) > len("s3:"):  # something beyond the scheme survived
+            return prefix
+        return None
     local_path = str(primary.get("file:local_path") or "")
     if local_path.startswith(("s3://", "/")):
         return local_path

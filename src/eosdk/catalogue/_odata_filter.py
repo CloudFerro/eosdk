@@ -45,19 +45,22 @@ def _datetime_clauses(interval: str) -> list[str]:
     if start and start != "..":
         clauses.append(f"ContentDate/Start ge {_normalize_ts(start)}")
     if end and end != "..":
-        clauses.append(f"ContentDate/Start le {_normalize_ts(end)}")
+        clauses.append(f"ContentDate/Start le {_normalize_ts(end, end=True)}")
     if not clauses:
         raise UnsupportedQueryFeature(backend=BACKEND, feature=f"open interval {interval!r}")
     return clauses
 
 
-def _normalize_ts(value: str) -> str:
+def _normalize_ts(value: str, *, end: bool = False) -> str:
     ts = value.strip()
     if "T" not in ts:
-        ts = f"{ts}T00:00:00.000Z"
-    elif not ts.endswith("Z"):
-        ts = f"{ts}Z"
-    return ts
+        # A bare date names the whole day: the end bound must expand to its
+        # last instant, mirroring the STAC backend so both translate the
+        # shared Query identically.
+        return f"{ts}T23:59:59.999Z" if end else f"{ts}T00:00:00.000Z"
+    if ts.endswith("Z") or "+" in ts[10:] or "-" in ts[10:]:
+        return ts
+    return f"{ts}Z"
 
 
 def _bbox_clause(bbox: tuple[float, float, float, float]) -> str:

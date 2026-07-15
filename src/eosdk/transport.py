@@ -186,9 +186,11 @@ class Transport:
                     hint="check the endpoint URL for this service in your profile or EOSDK_* env",
                 ) from exc
 
-            if response.status_code in policy.retry_statuses and retryable_method:
+            # taxonomy mapping (429 -> QuotaExceeded below) applies to every
+            # method; only the retry loop is restricted to idempotent ones
+            if response.status_code in policy.retry_statuses:
                 last_status = response
-                if attempt < policy.attempts:
+                if retryable_method and attempt < policy.attempts:
                     retry_after = (
                         _retry_after_seconds(response) if response.status_code == 429 else None
                     )

@@ -13,10 +13,19 @@ from eosdk.auth.keycloak import (
     KeycloakAuth,
     TokenCache,
     TokenState,
+    default_token_dir,
 )
 from eosdk.exceptions import AuthError
 from eosdk.transport import RetryPolicy, Transport
-from tests.auth.conftest import DEVICE_URL, KEYCLOAK, REALM, TOKEN_URL, oauth_error, token_response
+from tests.auth.conftest import (
+    DEVICE_URL,
+    KEYCLOAK,
+    OIDC_URL,
+    REALM,
+    TOKEN_URL,
+    oauth_error,
+    token_response,
+)
 
 
 class Clock:
@@ -51,6 +60,32 @@ def auth(tmp_path: Path, clock: Clock) -> KeycloakAuth:
         sleep=clock.sleep,
     )
     transport.close()
+
+
+class TestDefaultTokenDir:
+    def test_honours_xdg_config_home(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+        assert default_token_dir() == tmp_path / "xdg" / "eosdk" / "tokens"
+
+    def test_falls_back_to_home_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+        assert default_token_dir() == Path.home() / ".config" / "eosdk" / "tokens"
+
+
+class TestTokenCache:
+    def test_path_is_profile_file(self, tmp_path: Path) -> None:
+        assert TokenCache(tmp_path, profile="prod").path == tmp_path / "prod.json"
+
+    def test_failed_save_keeps_old_state_and_leaves_no_temp_file(self, tmp_path: Path) -> None:
+        cache = TokenCache(tmp_path, profile="test")
+        cache.save(TokenState(access_token="OLD", access_expires_at=1.0))
+        broken = TokenState(access_token=b"bytes are not JSON")  # type: ignore[arg-type]
+        with pytest.raises(TypeError):
+            cache.save(broken)
+        loaded = cache.load()
+        assert loaded is not None
+        assert loaded.access_token == "OLD"  # previous state untouched
+        assert list(tmp_path.glob("*.tmp")) == []  # temp file cleaned up
 
 
 class TestLogin:
@@ -126,6 +161,50 @@ class TestAccessTokenStateMachine:
         route.mock(return_value=oauth_error("invalid_grant"))
         with pytest.raises(AuthError, match="eo auth login"):
             auth.access_token()
+
+    def test_disk_refresh_token_adopted_when_access_expired(
+        self, auth: KeycloakAuth, clock: Clock, tmp_path: Path, mock_oidc: respx.Router
+    ) -> None:
+        # Another process left an expired access token but a live refresh token
+        # on disk: a fresh provider must adopt that session and refresh with it.
+        cache = TokenCache(tmp_path / "tokens", profile="test")
+        cache.save(
+            TokenState(
+                access_token="STALE",
+                access_expires_at=clock.now - 10,
+                refresh_token="DISK-RT",
+                refresh_expires_at=clock.now + 1800,
+            )
+        )
+        token_mock = mock_oidc.post(TOKEN_URL).mock(return_value=token_response(access="NEW"))
+        assert auth.access_token() == "NEW"
+        body = token_mock.calls.last.request.content.decode()
+        assert "grant_type=refresh_token" in body
+        assert "refresh_token=DISK-RT" in body
+
+    def test_force_refresh_uses_disk_session(
+        self, auth: KeycloakAuth, clock: Clock, tmp_path: Path, mock_oidc: respx.Router
+    ) -> None:
+        # force_refresh with no in-memory session must fall back to the cache.
+        cache = TokenCache(tmp_path / "tokens", profile="test")
+        cache.save(TokenState(refresh_token="DISK-RT", refresh_expires_at=clock.now + 1800))
+        token_mock = mock_oidc.post(TOKEN_URL).mock(return_value=token_response(access="FORCED"))
+        assert auth.force_refresh() == "FORCED"
+        body = token_mock.calls.last.request.content.decode()
+        assert "refresh_token=DISK-RT" in body
+
+    def test_refresh_server_error_propagates_unchanged(
+        self, auth: KeycloakAuth, clock: Clock, mock_oidc: respx.Router
+    ) -> None:
+        # Only invalid_grant means "session expired"; other refresh failures
+        # must surface as-is instead of wrongly telling the user to re-login.
+        route = mock_oidc.post(TOKEN_URL).mock(return_value=token_response())
+        auth.login("alice", "pw")
+        clock.now += 400
+        route.mock(return_value=oauth_error("server_error", 500))
+        with pytest.raises(AuthError, match="server_error") as exc_info:
+            auth.access_token()
+        assert "eo auth login" not in str(exc_info.value)
 
     def test_empty_cache_asks_for_login(self, auth: KeycloakAuth, mock_oidc: respx.Router) -> None:
         with pytest.raises(AuthError, match="eo auth login"):
@@ -212,6 +291,23 @@ class TestDeviceFlow:
         mock_oidc.post(DEVICE_URL).mock(return_value=self.device_grant())
         mock_oidc.post(TOKEN_URL).mock(return_value=oauth_error("expired_token"))
         with pytest.raises(AuthError, match="expired_token"):
+            auth.login_device(lambda info: None)
+
+    def test_realm_without_device_endpoint(
+        self, auth: KeycloakAuth, oidc_document: dict[str, object]
+    ) -> None:
+        document = dict(oidc_document)
+        del document["device_authorization_endpoint"]
+        with respx.mock as router:
+            router.get(OIDC_URL).mock(return_value=httpx.Response(200, json=document))
+            with pytest.raises(AuthError, match="device authorization endpoint"):
+                auth.login_device(lambda info: None)
+
+    def test_device_authorization_http_error(
+        self, auth: KeycloakAuth, mock_oidc: respx.Router
+    ) -> None:
+        mock_oidc.post(DEVICE_URL).mock(return_value=httpx.Response(500))
+        with pytest.raises(AuthError, match="device authorization failed with HTTP 500"):
             auth.login_device(lambda info: None)
 
     def test_timeout(self, auth: KeycloakAuth, clock: Clock, mock_oidc: respx.Router) -> None:

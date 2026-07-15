@@ -90,6 +90,12 @@ class TestSearchResult:
         assert [p.id for p in result] == ["p1", "p2", "p3"]
         assert fetcher.calls == 3
 
+    def test_matched_property_reads_backend_count_without_fetching(self) -> None:
+        fetcher = ScriptedFetcher([[_product(1)]])
+        assert SearchResult(fetcher, matched=42).matched == 42
+        assert SearchResult(fetcher).matched is None
+        assert fetcher.calls == 0  # unlike len(), matched never triggers a fetch
+
     def test_len_with_and_without_count(self) -> None:
         fetcher = ScriptedFetcher([[_product(1)]])
         assert len(SearchResult(fetcher, matched=42)) == 42

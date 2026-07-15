@@ -122,6 +122,12 @@ def test_quota_exceeded_retry_after() -> None:
     assert "30" in str(err)
 
 
+def test_s3_key_limit_reports_the_limit_when_known() -> None:
+    err = S3KeyLimitReached(limit=10)
+    assert "(limit=10)" in str(err)
+    assert err.limit == 10
+
+
 def test_s3_key_limit_names_remediation() -> None:
     err = S3KeyLimitReached(detail="Max number of credentials reached.")
     msg = str(err)

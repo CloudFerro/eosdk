@@ -176,6 +176,14 @@ class TestStrategySets:
         sets = strategy_sets(parse_document(raw))
         assert {s.name for s in sets["http"]} == {"odata", "resto"}
 
+    def test_invalid_strategy_entry_treated_as_not_offered(self) -> None:
+        raw = spec_document()
+        raw["services"]["data_access"]["http"]["resto"]["sunset"] = "eventually"  # not a date
+        sets = strategy_sets(parse_document(raw))
+        strategies = {s.name: s for s in sets["http"]}
+        assert strategies["resto"].available is False  # unparseable entry is dropped
+        assert strategies["odata"].available is True  # valid sibling unaffected
+
 
 class TestApiVersions:
     def test_extraction(self) -> None:

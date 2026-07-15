@@ -105,7 +105,8 @@ def download(
         show_progress = not quiet and sys.stderr.isatty()
         if not quiet:
             stderr.print(
-                f"downloading {len(products)} product(s) to {output} — press Ctrl+C to stop"
+                f"downloading {len(products)} product(s) to {output} — press Ctrl+C to stop",
+                soft_wrap=True,
             )
 
         finished: set[str] = set()

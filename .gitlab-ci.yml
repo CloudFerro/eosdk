@@ -109,8 +109,12 @@ container_scan:
   script:
     - export FULL_IMAGE_NAME="$REGISTRY_URL/${CI_PROJECT_PATH}:${CI_COMMIT_REF_SLUG}-${CI_PIPELINE_ID}"
     - time trivy image --download-db-only
-    - trivy image --username "$CI_REGISTRY_USER" --password "$CI_REGISTRY_PASSWORD" --exit-code 0 --severity HIGH,CRITICAL "$FULL_IMAGE_NAME"
-    - trivy image --username "$CI_REGISTRY_USER" --password "$CI_REGISTRY_PASSWORD" --exit-code 1 --severity HIGH,CRITICAL --output "$CI_PROJECT_DIR/gl-container-scanning-report.json" "$FULL_IMAGE_NAME"
+    # Only fail on vulnerabilities that have an available fix. The Debian
+    # bookworm base image carries HIGH/CRITICAL CVEs (perl, util-linux, zlib,
+    # ncurses, ...) that upstream has not fixed (status affected/will_not_fix/
+    # fix_deferred), which we cannot remediate here.
+    - trivy image --username "$CI_REGISTRY_USER" --password "$CI_REGISTRY_PASSWORD" --ignore-unfixed --exit-code 0 --severity HIGH,CRITICAL "$FULL_IMAGE_NAME"
+    - trivy image --username "$CI_REGISTRY_USER" --password "$CI_REGISTRY_PASSWORD" --ignore-unfixed --exit-code 1 --severity HIGH,CRITICAL --output "$CI_PROJECT_DIR/gl-container-scanning-report.json" "$FULL_IMAGE_NAME"
   cache:
     paths:
       - .trivycache/

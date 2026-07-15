@@ -77,7 +77,7 @@ explicitly.
 
 ### Removed
 
-- `eo search --json` (**breaking**, pre-1.0); use `--format json`.
+- `eo search --json`; use `--format json`.
 
 ### Fixed
 
@@ -164,8 +164,6 @@ explicitly.
   (respx + moto): search → download → list → ranged open.
 
 ## [0.1.0] - 2026-07-08
-
-_Phases 0–1._
 
 ### Added
 

@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [master, init-implementation]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --group dev
+      - run: uv run ruff format --check .
+      - run: uv run ruff check .
+      - run: uv run mypy
+
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --group dev --python ${{ matrix.python }}
+      - run: uv run pytest --cov=eosdk --cov-report=term
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --group docs
+      - run: uv run --group docs mkdocs build --strict
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv build
+      - run: uvx twine check dist/*
+      - name: smoke-install built wheel
+        run: |
+          uv venv /tmp/smoke --python 3.12
+          uv pip install --python /tmp/smoke/bin/python dist/*.whl
+          /tmp/smoke/bin/python -c "import eosdk; print(eosdk.__version__)"
+          /tmp/smoke/bin/eo --help

@@ -1,0 +1,38 @@
+{
+  "version": "1.0",
+  "platform": {
+    "name": "example-eu",
+    "description": "Example Earth-observation data platform (example.eu)"
+  },
+  "services": {
+    "catalogue": {
+      "stac": { "url": "https://stac.example.eu/v1" },
+      "odata": { "url": "https://catalogue.example.eu/odata", "api_version": "v1" }
+    },
+    "data_access": {
+      "http": {
+        "odata": {
+          "url": "https://download.example.eu/odata",
+          "api_version": "v1",
+          "capabilities": ["download", "list"]
+        },
+        "resto": {
+          "url": "https://download.example.eu/download",
+          "capabilities": ["download"],
+          "deprecated": true,
+          "sunset": "2027-01-01",
+          "replacement": "odata"
+        }
+      },
+      "s3": {
+        "endpoint": "https://s3.example.eu",
+        "region": "default",
+        "credentials": { "url": "https://keys.example.eu/api", "api_version": "v1" }
+      }
+    },
+    "auth": {
+      "issuer": "https://auth.example.eu/realms/eodata",
+      "client_id": "example-public"
+    }
+  }
+}

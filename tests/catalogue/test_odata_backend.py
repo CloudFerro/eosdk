@@ -116,9 +116,12 @@ class TestGet:
         assert product.collection == "SENTINEL-2"
         assert product.size == 1207959552
         assert product.cloud_cover == 12.4
-        assert product.datetime is not None and product.datetime.year == 2026
-        assert product.checksum is not None and product.checksum.algorithm == "md5"
-        assert product.s3_path is not None and product.s3_path.startswith("/eodata/")
+        assert product.datetime is not None
+        assert product.datetime.year == 2026
+        assert product.checksum is not None
+        assert product.checksum.algorithm == "md5"
+        assert product.s3_path is not None
+        assert product.s3_path.startswith("/eodata/")
         assert product.raw["Id"] == uuid
 
     @respx.mock

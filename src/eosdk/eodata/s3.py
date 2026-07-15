@@ -176,9 +176,11 @@ class S3Downloader:
         paginator = self._s3().get_paginator("list_objects_v2")
         objects: list[tuple[str, str, int]] = []
         for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-            for entry in page.get("Contents", []):
-                if not entry["Key"].endswith("/"):  # skip folder markers
-                    objects.append((bucket, entry["Key"], entry["Size"]))
+            objects.extend(
+                (bucket, entry["Key"], entry["Size"])
+                for entry in page.get("Contents", [])
+                if not entry["Key"].endswith("/")  # skip folder markers
+            )
         if not objects:
             # a single-object product: the prefix may be the key itself
             head = self._head(bucket, prefix, product.id)
@@ -286,6 +288,7 @@ class S3Downloader:
                 key=key, total_size=total_size, part_size=self._part_size, validator=etag
             )
             part_path.unlink(missing_ok=True)
+        transfer_state = state  # non-optional binding; narrowing does not survive into closures
 
         # pre-allocate so offset writes land inside the file
         if not part_path.exists() or part_path.stat().st_size != total_size:
@@ -314,9 +317,8 @@ class S3Downloader:
                 fh.flush()
                 os.fsync(fh.fileno())  # bytes durable before the state file admits them
             with state_lock:
-                assert state is not None
-                state.mark_complete(start, end)
-                save_state(target, state)
+                transfer_state.mark_complete(start, end)
+                save_state(target, transfer_state)
                 done += len(body)
                 emit("chunk", done, None)
 
@@ -328,7 +330,7 @@ class S3Downloader:
                 for byte_range in plan.ranges:
                     fetch_range(byte_range)
 
-        os.replace(part_path, target)
+        part_path.replace(target)
         clear_state(target)
         return done
 

@@ -120,12 +120,13 @@ class _SecretStore:
         self._path.parent.chmod(0o700)
         # mkstemp creates the file 0600 where POSIX modes exist; no fchmod (absent on Windows)
         fd, tmp_name = tempfile.mkstemp(dir=self._path.parent, suffix=".tmp")
+        tmp_path = Path(tmp_name)
         try:
             with os.fdopen(fd, "w") as fh:
                 json.dump(entries, fh)
-            os.replace(tmp_name, self._path)
+            tmp_path.replace(self._path)
         except BaseException:
-            os.unlink(tmp_name)
+            tmp_path.unlink()
             raise
 
     def get(self, label: str) -> dict[str, str] | None:

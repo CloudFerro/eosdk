@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, HttpUrl, TypeAdapter
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, HttpUrl, TypeAdapter
 
 from eosdk.exceptions import ConfigError
 
@@ -91,7 +91,7 @@ class ConfigFile(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     default_profile: str | None = None
-    profiles: dict[str, Profile] = {}
+    profiles: dict[str, Profile] = Field(default_factory=dict)
 
 
 @dataclass(frozen=True)

@@ -93,8 +93,9 @@ def build_filter(query: Query) -> str:
         clauses.extend(_datetime_clauses(query.datetime))
     if query.bbox is not None:
         clauses.append(_bbox_clause(query.bbox))
-    for clause in parse_filters(query.filters, backend=BACKEND):
-        clauses.append(_attribute_clause(clause))
+    clauses.extend(
+        _attribute_clause(clause) for clause in parse_filters(query.filters, backend=BACKEND)
+    )
     if not clauses:
         raise UnsupportedQueryFeature(backend=BACKEND, feature="an empty (unbounded) query")
     return " and ".join(clauses)

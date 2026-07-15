@@ -17,6 +17,7 @@ from eosdk.discovery.models import (
     strategy_sets,
 )
 from eosdk.eodata.capabilities import BUILTIN_MATRIX
+from eosdk.exceptions import ConfigError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -57,7 +58,11 @@ class DiscoveryResolver:
     def document(self, *, refresh: bool = False) -> DiscoveryDocument:
         if self._document is None or refresh:
             url = self.url
-            assert url is not None, "discovery is not configured (no platform root)"
+            if url is None:
+                raise ConfigError(
+                    "discovery is not configured",
+                    hint="set a platform root or EOSDK_DISCOVERY_URL",
+                )
             self._document = fetch_document(url, self._cache, self._transport, refresh=refresh)
             if self._on_document is not None:
                 self._on_document(self._document)

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 import tempfile
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import tomlkit
 from pydantic import ValidationError
@@ -16,9 +16,6 @@ from pydantic import ValidationError
 from eosdk.config.loader import _load_config_file
 from eosdk.config.settings import URL_ADAPTER, URL_FIELDS, Profile
 from eosdk.exceptions import ConfigError
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 def list_profiles(path: Path) -> dict[str, Profile]:
@@ -42,12 +39,13 @@ def _read_document(path: Path) -> tomlkit.TOMLDocument:
 def _write_document(path: Path, document: tomlkit.TOMLDocument) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    tmp_path = Path(tmp_name)
     try:
         with os.fdopen(fd, "w") as fh:
             fh.write(tomlkit.dumps(document))
-        os.replace(tmp_name, path)
+        tmp_path.replace(path)
     except BaseException:
-        os.unlink(tmp_name)
+        tmp_path.unlink()
         raise
 
 

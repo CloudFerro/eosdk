@@ -52,7 +52,7 @@ class TestPlanRanges:
         assert plan.ranges == ((0, 39),)
 
     def test_invalid_args(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="part_size"):
             plan_ranges(10, part_size=0)
 
 

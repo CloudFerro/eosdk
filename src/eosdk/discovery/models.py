@@ -11,7 +11,7 @@ import datetime as dt
 import re
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from eosdk.eodata.capabilities import BUILTIN_MATRIX, Strategy, effective_capabilities
 from eosdk.exceptions import ConfigError
@@ -60,7 +60,7 @@ class DiscoveryDocument(BaseModel):
 
     version: str
     platform: PlatformInfo | None = None
-    services: dict[str, dict[str, Any]] = {}
+    services: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 def parse_document(raw: dict[str, Any]) -> DiscoveryDocument:

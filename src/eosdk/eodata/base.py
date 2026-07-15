@@ -11,7 +11,6 @@ makes in-flight workers abort at the next chunk boundary before re-raising.
 from __future__ import annotations
 
 import hashlib
-import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -209,8 +208,9 @@ class BaseDownloader:
             emit("start", 0, total)
 
             hasher = None
-            if verify and product.checksum is not None:
-                hasher = hashlib.new(product.checksum.algorithm.replace("-", "_"))
+            expected = product.checksum if verify else None
+            if expected is not None:
+                hasher = hashlib.new(expected.algorithm.replace("-", "_"))
 
             done = 0
             interrupted = False
@@ -232,18 +232,17 @@ class BaseDownloader:
             raise DownloadError("interrupted", product_id=product.id, backend=self.backend)
 
         verified: bool | None = None
-        if hasher is not None:
-            assert product.checksum is not None
-            if hasher.hexdigest() != product.checksum.value:
+        if hasher is not None and expected is not None:
+            if hasher.hexdigest() != expected.value:
                 part_path.unlink(missing_ok=True)
                 raise DownloadError(
-                    f"checksum mismatch ({product.checksum.algorithm})",
+                    f"checksum mismatch ({expected.algorithm})",
                     product_id=product.id,
                     backend=self.backend,
                 )
             verified = True
 
-        os.replace(part_path, final_path)
+        part_path.replace(final_path)
         emit("done", done, total)
         return DownloadReport(
             product_id=product.id,

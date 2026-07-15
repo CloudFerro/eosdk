@@ -44,13 +44,23 @@ class TokenState:
     refresh_token: str | None = None
     refresh_expires_at: float | None = None
 
+    def valid_access_token(self, now: float) -> str | None:
+        if self.access_token is not None and self.access_expires_at - now > EXPIRY_LEEWAY:
+            return self.access_token
+        return None
+
     def access_valid(self, now: float) -> bool:
-        return self.access_token is not None and self.access_expires_at - now > EXPIRY_LEEWAY
+        return self.valid_access_token(now) is not None
+
+    def valid_refresh_token(self, now: float) -> str | None:
+        if self.refresh_token is None:
+            return None
+        if self.refresh_expires_at is None or self.refresh_expires_at - now > EXPIRY_LEEWAY:
+            return self.refresh_token
+        return None
 
     def refresh_valid(self, now: float) -> bool:
-        if self.refresh_token is None:
-            return False
-        return self.refresh_expires_at is None or self.refresh_expires_at - now > EXPIRY_LEEWAY
+        return self.valid_refresh_token(now) is not None
 
 
 def default_token_dir() -> Path:
@@ -82,12 +92,13 @@ class TokenCache:
         self._dir.chmod(0o700)
         # mkstemp creates the file 0600 where POSIX modes exist; no fchmod (absent on Windows)
         fd, tmp_name = tempfile.mkstemp(dir=self._dir, suffix=".tmp")
+        tmp_path = Path(tmp_name)
         try:
             with os.fdopen(fd, "w") as fh:
                 json.dump(asdict(state), fh)
-            os.replace(tmp_name, self._path)
+            tmp_path.replace(self._path)
         except BaseException:
-            os.unlink(tmp_name)
+            tmp_path.unlink()
             raise
 
     def clear(self) -> None:
@@ -181,6 +192,13 @@ class KeycloakAuth:
             self._oidc = fetch_oidc_endpoints(self._transport, self._url, self.realm)
         return self._oidc
 
+    def supports_device_flow(self) -> bool:
+        """Whether the realm advertises a device authorization endpoint.
+
+        Fetches the OIDC discovery document on first call.
+        """
+        return self._endpoints().device_authorization_endpoint is not None
+
     # -- token grants --------------------------------------------------------
 
     def _token_request(self, data: dict[str, str]) -> TokenState:
@@ -192,12 +210,15 @@ class KeycloakAuth:
         )
         payload: dict[str, Any] = response.json() if response.content else {}
         if response.status_code != 200:
-            error = payload.get("error", f"HTTP {response.status_code}")
+            error = payload.get("error")
+            code = error if isinstance(error, str) else None
             description = payload.get("error_description", "")
             raise AuthError(
-                f"token request failed: {error} {description}".strip(),
+                f"token request failed: {code or f'HTTP {response.status_code}'} "
+                f"{description}".strip(),
                 realm=self.realm,
                 profile=self.profile,
+                code=code,
             )
         now = self._now()
         refresh_expires = payload.get("refresh_expires_in")
@@ -262,10 +283,9 @@ class KeycloakAuth:
                     }
                 )
             except AuthError as exc:
-                message = str(exc)
-                if "authorization_pending" in message:
+                if exc.code == "authorization_pending":
                     pass
-                elif "slow_down" in message:
+                elif exc.code == "slow_down":
                     interval += 5
                 else:
                     raise
@@ -292,15 +312,15 @@ class KeycloakAuth:
         """Return a valid access token, refreshing transparently (SPEC §6.4)."""
         with self._lock:
             now = self._now()
-            if self._state.access_valid(now):
-                assert self._state.access_token is not None
-                return self._state.access_token
+            token = self._state.valid_access_token(now)
+            if token is not None:
+                return token
             cached = self._cache.load()
             if cached is not None:
-                if cached.access_valid(now):
+                token = cached.valid_access_token(now)
+                if token is not None:
                     self._state = cached
-                    assert cached.access_token is not None
-                    return cached.access_token
+                    return token
                 if cached.refresh_valid(now) and not self._state.refresh_valid(now):
                     self._state = cached
             return self._refresh_locked()
@@ -311,28 +331,33 @@ class KeycloakAuth:
 
     def _refresh_locked(self) -> str:
         """Refresh-token grant; caller must hold the lock."""
-        if not self._state.refresh_valid(self._now()):
+        refresh_token = self._state.valid_refresh_token(self._now())
+        if refresh_token is None:
             cached = self._cache.load()
-            if cached is not None and cached.refresh_valid(self._now()):
-                self._state = cached
-            else:
-                raise AuthError(
-                    f"no valid session; {LOGIN_HINT}", realm=self.realm, profile=self.profile
-                )
-        assert self._state.refresh_token is not None
+            if cached is not None:
+                refresh_token = cached.valid_refresh_token(self._now())
+                if refresh_token is not None:
+                    self._state = cached
+        if refresh_token is None:
+            raise AuthError(
+                f"no valid session; {LOGIN_HINT}", realm=self.realm, profile=self.profile
+            )
         try:
             state = self._token_request(
-                {"grant_type": "refresh_token", "refresh_token": self._state.refresh_token}
+                {"grant_type": "refresh_token", "refresh_token": refresh_token}
             )
         except AuthError as exc:
-            if "invalid_grant" in str(exc):
+            if exc.code == "invalid_grant":
                 raise AuthError(
                     f"session expired; {LOGIN_HINT}", realm=self.realm, profile=self.profile
                 ) from exc
             raise
         self._state = state
         self._cache.save(state)
-        assert state.access_token is not None
+        if state.access_token is None:
+            raise AuthError(
+                "token endpoint returned no access token", realm=self.realm, profile=self.profile
+            )
         return state.access_token
 
     def status(self) -> AuthStatus:

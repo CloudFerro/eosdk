@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import datetime as dt
 import sys
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import typer
 from rich.panel import Panel
 from rich.table import Table
 
 from eosdk.cli._state import build_client, friendly_errors, get_state, stderr, stdout
+
+if TYPE_CHECKING:
+    from eosdk.auth.keycloak import DeviceCodeInfo
 
 auth_app = typer.Typer(no_args_is_help=True)
 
@@ -34,12 +37,10 @@ def login(
     state = get_state(ctx)
     with friendly_errors(state), build_client(state) as client:
         auth = client.auth
-        use_device = device or (
-            username is None and auth._endpoints().device_authorization_endpoint is not None
-        )
+        use_device = device or (username is None and auth.supports_device_flow())
         if use_device:
 
-            def prompt(info) -> None:  # type: ignore[no-untyped-def]
+            def prompt(info: DeviceCodeInfo) -> None:
                 url = info.verification_uri_complete or info.verification_uri
                 stdout.print(
                     Panel(

@@ -193,7 +193,7 @@ class TestKeyLimit:
         )
         with pytest.raises(S3KeyLimitReached):
             provider.create()
-        with pytest.raises(S3KeyLimitReached):  # not swallowed by `except AuthError`
+        with pytest.raises(S3KeyLimitReached):  # noqa: PT012 — not swallowed by `except AuthError`
             try:
                 provider.create()
             except AuthError:

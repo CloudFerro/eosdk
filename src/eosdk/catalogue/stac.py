@@ -11,6 +11,7 @@ from __future__ import annotations
 import difflib
 import os.path
 import re
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from eosdk.catalogue.query import PROPERTY_ALIASES, parse_filters
@@ -321,11 +322,11 @@ def _queryable_type(schema: Any) -> str | None:
     return declared if isinstance(declared, str) else None
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
 class _StacCapabilities:
-    def __init__(self, *, search_url: str, search_method: str, query_extension: bool) -> None:
-        self.search_url = search_url
-        self.search_method = search_method
-        self.query_extension = query_extension
+    search_url: str
+    search_method: str
+    query_extension: bool
 
 
 def _normalize_interval(value: str) -> str:

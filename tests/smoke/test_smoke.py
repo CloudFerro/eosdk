@@ -21,7 +21,8 @@ class TestAnonymous:
         )
         assert products
         product = products[0]
-        assert product.id and product.name
+        assert product.id
+        assert product.name
         assert product.s3_path
         assert product.checksum is not None
 

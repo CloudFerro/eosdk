@@ -52,7 +52,7 @@ def _require_smoke() -> None:
 @pytest.fixture(autouse=True)
 def _blank_builtin_defaults() -> None:
     """Shadows the root conftest fixture: smoke tests want the real endpoints."""
-    return None
+    return
 
 
 def _revoke_cached_keys(client: Client, keys_dir: Path) -> None:

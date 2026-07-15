@@ -19,6 +19,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: GIS",
     "Typing :: Typed",
 ]
@@ -32,6 +33,11 @@ dependencies = [
     "tomli>=2; python_version < '3.11'",
     "tomlkit>=0.12",
 ]
+
+[project.urls]
+Repository = "https://gitlab.cloudferro.com/data-access/eosdk"
+Issues = "https://gitlab.cloudferro.com/data-access/eosdk/-/issues"
+Changelog = "https://gitlab.cloudferro.com/data-access/eosdk/-/blob/master/CHANGELOG.md"
 
 [project.scripts]
 eo = "eosdk.cli.main:app"
@@ -60,7 +66,9 @@ src = ["src", "tests"]
 target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "TC", "RUF"]
+select = ["E", "F", "I", "UP", "B", "SIM", "TC", "RUF", "C4", "PT", "PTH", "RET", "PERF"]
+# PERF203: try/except inside loops here are deliberate retry / collect-errors patterns
+ignore = ["PERF203"]
 
 [tool.ruff.lint.flake8-type-checking]
 runtime-evaluated-base-classes = ["pydantic.BaseModel"]

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import typer
 from rich.table import Table
@@ -12,10 +12,13 @@ from eosdk.cli._state import build_client, friendly_errors, get_state, stdout
 from eosdk.config import loader, profiles
 from eosdk.config.settings import URL_FIELDS
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
 config_app = typer.Typer(no_args_is_help=True)
 
 
-def _config_path(ctx: typer.Context):  # type: ignore[no-untyped-def]
+def _config_path(ctx: typer.Context) -> Path:
     state = get_state(ctx)
     return state.user_config or loader.user_config_path()
 

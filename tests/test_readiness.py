@@ -47,11 +47,13 @@ class TestReadinessProbe:
         probe = ReadinessProbe(tmp_path, interval=300.0, now=clock)
 
         first = probe.check(transport, BASE, service="eodata_http")
-        assert first.ready and not first.cached
+        assert first.ready
+        assert not first.cached
 
         clock.now += 60
         second = probe.check(transport, BASE, service="eodata_http")
-        assert second.ready and second.cached
+        assert second.ready
+        assert second.cached
         assert second.age == pytest.approx(60.0)
         assert route.call_count == 1
 
@@ -82,7 +84,8 @@ class TestReadinessProbe:
 
         clock.now += 10
         second = probe.check(transport, BASE, service="eodata_http")
-        assert not second.ready and second.cached
+        assert not second.ready
+        assert second.cached
         assert route.call_count == 1  # the failure verdict is throttled too
 
     @respx.mock
@@ -92,11 +95,13 @@ class TestReadinessProbe:
         probe = ReadinessProbe(tmp_path, interval=300.0, now=clock)
 
         first = probe.check(transport, BASE, service="eodata_http")
-        assert not first.ready and not first.cached
+        assert not first.ready
+        assert not first.cached
 
         route.mock(return_value=httpx.Response(200))  # service comes back
         second = probe.check(transport, BASE, service="eodata_http")
-        assert second.ready and not second.cached  # no stale verdict in the way
+        assert second.ready
+        assert not second.cached
 
     @respx.mock
     def test_endpoints_are_throttled_independently(
@@ -124,12 +129,14 @@ class TestReadinessProbe:
         route.mock(return_value=httpx.Response(200))  # service recovers
         clock.now += 10
         forced = probe.check(transport, BASE, service="eodata_http", force=True)
-        assert forced.ready and not forced.cached
+        assert forced.ready
+        assert not forced.cached
         assert route.call_count == 2
 
         clock.now += 10  # the forced verdict restarts the interval for unforced checks
         after = probe.check(transport, BASE, service="eodata_http")
-        assert after.ready and after.cached
+        assert after.ready
+        assert after.cached
         assert route.call_count == 2
 
     @respx.mock
@@ -145,13 +152,15 @@ class TestReadinessProbe:
         probe = ReadinessProbe(tmp_path, interval=300.0, now=clock)
 
         first = probe.check(transport, BASE, service="eodata_http")
-        assert not first.ready and not first.cached
+        assert not first.ready
+        assert not first.cached
         assert "quota exceeded" in first.detail
         assert route.call_count == 1  # single-shot: no transport retry loop
 
         clock.now += 10
         second = probe.check(transport, BASE, service="eodata_http")
-        assert not second.ready and second.cached
+        assert not second.ready
+        assert second.cached
         assert route.call_count == 1
 
     @respx.mock
@@ -170,10 +179,11 @@ class TestReadinessProbe:
         def fail_replace(src: object, dst: object) -> None:
             raise OSError("disk full")
 
-        monkeypatch.setattr("eosdk.readiness.os.replace", fail_replace)
+        monkeypatch.setattr("pathlib.Path.replace", fail_replace)
         with caplog.at_level(logging.WARNING, logger="eosdk.readiness"):
             result = probe.check(transport, BASE, service="eodata_http")
-        assert result.ready and not result.cached
+        assert result.ready
+        assert not result.cached
         assert "could not persist readiness verdict" in caplog.text
         assert list(tmp_path.glob("*.tmp")) == []  # failed write leaves no litter
 

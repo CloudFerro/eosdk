@@ -196,7 +196,7 @@ class TestResume:
         assert file_path.read_bytes() == SINGLE_PAYLOAD
         assert report.checksum_verified is True
         # ranges completed before the interrupt are not refetched
-        completed_before = {r for r in interrupted_ranges[:1]}
+        completed_before = set(interrupted_ranges[:1])
         assert completed_before.isdisjoint(set(second_calls))
         assert (
             len(second_calls)

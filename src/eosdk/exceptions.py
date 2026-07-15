@@ -21,7 +21,11 @@ class ConfigError(EosdkError):
 
 
 class AuthError(EosdkError):
-    """Login/refresh failure, or HTTP 401 persisting after a forced refresh."""
+    """Login/refresh failure, or HTTP 401 persisting after a forced refresh.
+
+    ``code`` carries the OAuth 2.0 ``error`` code from the token endpoint
+    (e.g. ``authorization_pending``, ``invalid_grant``) when one was returned.
+    """
 
     def __init__(
         self,
@@ -29,9 +33,11 @@ class AuthError(EosdkError):
         *,
         realm: str | None = None,
         profile: str | None = None,
+        code: str | None = None,
     ) -> None:
         self.realm = realm
         self.profile = profile
+        self.code = code
         parts = [message]
         if realm is not None:
             parts.append(f"realm={realm!r}")

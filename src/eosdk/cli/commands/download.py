@@ -69,7 +69,7 @@ def download(
     ] = None,
     output: Annotated[
         Path, typer.Option("--output", "-o", help="Target directory.", callback=_check_output)
-    ] = Path("."),
+    ] = Path(),
     via: Annotated[str, typer.Option("--via", help="http | s3")] = "http",
     concurrency: Annotated[int, typer.Option("--concurrency", "-c")] = 4,
     checksum: Annotated[

@@ -120,7 +120,7 @@ def platform(platform_mocks: respx.Router) -> Iterator[respx.Router]:
             headers={"Content-Disposition": f'attachment; filename="{safe_tree.PRODUCT_NAME}.zip"'},
         )
     )
-    yield platform_mocks
+    return platform_mocks
 
 
 @pytest.mark.integration

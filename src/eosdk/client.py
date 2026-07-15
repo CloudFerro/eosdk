@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from eosdk.eodata.http import HttpDownloader
     from eosdk.eodata.s3 import S3Downloader
     from eosdk.models import Collection, Node, Product, Queryable, SearchResult
+    from eosdk.plugins import PluginSpec
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,7 @@ class Client:
         self._http: HttpDownloader | None = None
         self._s3: S3Downloader | None = None
         self._keys: S3KeysProvider | None = None
+        self._plugin_registry: dict[str, PluginSpec] | None = None
 
     # -- discovery (SPEC §6.2): fetched lazily on first pending-endpoint use ---
 
@@ -248,8 +250,8 @@ class Client:
 
     # -- public surface (SPEC §7.1) ---------------------------------------------
 
-    def _plugins(self) -> dict[str, Any]:
-        if not hasattr(self, "_plugin_registry"):
+    def _plugins(self) -> dict[str, PluginSpec]:
+        if self._plugin_registry is None:
             from eosdk.plugins import load_plugins
 
             self._plugin_registry = load_plugins()

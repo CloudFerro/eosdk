@@ -16,6 +16,7 @@ never from discovery — this breaks the config→discovery cycle (SPEC §4.2).
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
@@ -81,8 +82,6 @@ def _load_config_file(path: Path) -> ConfigFile:
 
 def user_config_path() -> Path:
     """``~/.config/eosdk/config.toml``, honoring ``$XDG_CONFIG_HOME``."""
-    import os
-
     xdg = os.environ.get("XDG_CONFIG_HOME")
     base = Path(xdg) if xdg else Path.home() / ".config"
     return base / "eosdk" / "config.toml"
@@ -135,8 +134,6 @@ def load(
     discovery: DiscoveryHook | None = None,
 ) -> ResolvedConfig:
     """Resolve endpoints per field through the six-layer precedence chain."""
-    import os
-
     env = os.environ if env is None else env
     kwargs_endpoints = dict(kwargs_endpoints or {})
     discovery = discovery if discovery is not None else NullDiscovery()

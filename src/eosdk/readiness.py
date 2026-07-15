@@ -28,6 +28,8 @@ from eosdk.exceptions import EndpointUnreachable, QuotaExceeded
 from eosdk.transport import RetryPolicy, route
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from eosdk.transport import Transport
 
 logger = logging.getLogger(__name__)
@@ -61,7 +63,7 @@ class ReadinessProbe:
         directory: Path | None = None,
         *,
         interval: float = MIN_PROBE_INTERVAL,
-        now: Any = time.time,
+        now: Callable[[], float] = time.time,
     ) -> None:
         self._dir = directory or default_readiness_dir()
         self.interval = interval
@@ -85,14 +87,15 @@ class ReadinessProbe:
         self._dir.chmod(0o700)
         # mkstemp creates the file 0600 where POSIX modes exist; no fchmod (absent on Windows)
         fd, tmp_name = tempfile.mkstemp(dir=self._dir, suffix=".tmp")
+        tmp_path = Path(tmp_name)
         try:
             with os.fdopen(fd, "w") as fh:
                 json.dump(
                     {"probed_at": self._now(), "ready": result.ready, "detail": result.detail}, fh
                 )
-            os.replace(tmp_name, self._path(url))
+            tmp_path.replace(self._path(url))
         except BaseException:
-            os.unlink(tmp_name)
+            tmp_path.unlink()
             raise
 
     def check(

@@ -10,6 +10,10 @@ explicitly.
 
 ## [Unreleased]
 
+### Added
+
+- schema validator for eo-services
+
 ### Fixed
 
 - `eo config init --platform`: re-running it against a discovery-managed
@@ -18,12 +22,6 @@ explicitly.
   still required only to overwrite a user-owned profile that happens to share
   the name; pass `--name` to keep a hand-tuned profile separate from the
   auto-managed one.
-
-## [0.5.0] - 2026-07-16
-
-### Added
-
-- schema validator for eo-services
 
 ## [0.4.0] - 2026-07-15
 

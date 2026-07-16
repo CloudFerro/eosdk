@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gitlab.cloudferro.com/data-access/eosdk/-/raw/master/schemas/eo-services.schema.json",
+  "title": "eosdk platform discovery document",
+  "description": "Schema for the eo-services.json platform discovery document served at {platform}/.well-known/eo-services.json (SPEC §6.2). Mirrors the eosdk pydantic models (DiscoveryDocument / PlatformInfo / StrategyInfo). This schema is pinned to document schema major 1 and is stricter than the runtime SDK on purpose: it rejects unknown field names to catch authoring typos, whereas the SDK itself ignores unknown keys for forward compatibility.",
+  "type": "object",
+  "required": ["version", "services"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "description": "Document schema version. Only major 1 is supported by this schema (e.g. \"1.0\").",
+      "type": "string",
+      "pattern": "^1(\\.[0-9]+)*$"
+    },
+    "platform": {
+      "$ref": "#/$defs/platform"
+    },
+    "services": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "catalogue": { "$ref": "#/$defs/catalogue" },
+        "data_access": { "$ref": "#/$defs/dataAccess" },
+        "auth": { "$ref": "#/$defs/auth" }
+      }
+    }
+  },
+  "$defs": {
+    "platform": {
+      "description": "Optional platform identity block. `name` doubles as the config-profile slug the SDK snapshots the discovered configuration under.",
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" }
+      }
+    },
+    "catalogue": {
+      "description": "Catalogue endpoints. `stac` and `odata` each carry a base URL (and optional api_version).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "stac": { "$ref": "#/$defs/strategy" },
+        "odata": { "$ref": "#/$defs/strategy" }
+      }
+    },
+    "dataAccess": {
+      "description": "Data-access endpoints, split by transport: `http` (whole-object HTTP downloads, one or more named strategies) and `s3` (object storage).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "http": {
+          "description": "HTTP download strategies keyed by name (e.g. `odata`, `resto`). The SDK owns its preference order; strategy names are open, but each entry must be a well-formed strategy.",
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "$ref": "#/$defs/strategy" }
+        },
+        "s3": { "$ref": "#/$defs/s3" }
+      }
+    },
+    "s3": {
+      "description": "S3 object-store access. Carries no strategies: an `endpoint`, optional `region` (default \"default\"), and the `credentials` service that issues access/secret key pairs.",
+      "type": "object",
+      "required": ["endpoint"],
+      "additionalProperties": false,
+      "properties": {
+        "endpoint": { "$ref": "#/$defs/url" },
+        "region": { "type": "string", "minLength": 1 },
+        "credentials": {
+          "description": "Service issuing S3 access/secret key pairs. `url` is required for the block to be usable.",
+          "type": "object",
+          "required": ["url"],
+          "additionalProperties": false,
+          "properties": {
+            "url": { "$ref": "#/$defs/url" },
+            "api_version": { "type": "string" }
+          }
+        }
+      }
+    },
+    "auth": {
+      "description": "OAuth/OIDC identity. `issuer` must contain a `/realms/<realm>` segment (Keycloak); the SDK splits it into base + realm.",
+      "type": "object",
+      "required": ["issuer"],
+      "additionalProperties": false,
+      "properties": {
+        "issuer": {
+          "allOf": [{ "$ref": "#/$defs/url" }],
+          "pattern": "/realms/[^/]",
+          "description": "OIDC issuer URL, e.g. https://auth.example.eu/realms/eodata"
+        },
+        "client_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Public OAuth client id for the SDK/CLI. A confidential client id or secret must never appear here."
+        }
+      }
+    },
+    "strategy": {
+      "description": "A single endpoint family. `url` is required; the remaining fields describe versioning, capability gating and deprecation.",
+      "type": "object",
+      "required": ["url"],
+      "additionalProperties": false,
+      "properties": {
+        "url": { "$ref": "#/$defs/url" },
+        "api_version": {
+          "type": "string",
+          "description": "Advertised API version, where the SDK owns protocol versioning. Omitted for externally-versioned protocols (e.g. S3)."
+        },
+        "capabilities": {
+          "description": "Intersection gate (SPEC §6.2): can only RESTRICT the SDK's built-in capabilities for this strategy, never extend them.",
+          "type": "array",
+          "items": { "type": "string", "enum": ["download", "list", "open"] },
+          "uniqueItems": true
+        },
+        "deprecated": { "type": "boolean" },
+        "sunset": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "Sunset date (YYYY-MM-DD). The SDK warns when it falls back to a strategy past this date."
+        },
+        "replacement": {
+          "type": "string",
+          "description": "Name of the strategy that supersedes this one."
+        }
+      }
+    },
+    "url": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https?://",
+      "minLength": 1
+    }
+  }
+}

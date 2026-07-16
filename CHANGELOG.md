@@ -10,6 +10,12 @@ explicitly.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-16
+
+### Added
+
+- schema validator for eo-services
+
 ## [0.4.0] - 2026-07-15
 
 ### Added

@@ -39,6 +39,7 @@ from eosdk.config.settings import (
     ResolvedConfig,
     ResolvedValue,
 )
+from eosdk.discovery.models import derive_discovery_url
 from eosdk.exceptions import ConfigError
 
 if TYPE_CHECKING:
@@ -193,6 +194,13 @@ def load(
     values: dict[str, Any] = {}
     for fieldname in Endpoints.model_fields:
         resolved = local_layers(fieldname)
+        # discovery_url is always derivable from the platform root — it is a
+        # location, not a discovered service, so it never stays <pending>.
+        if resolved is None and fieldname == "discovery_url" and platform_value is not None:
+            derived_url = derive_discovery_url(platform_value)
+            resolved = ResolvedValue(
+                _validate_url("discovery_url", derived_url, source="derived"), "derived"
+            )
         if resolved is None and platform_value is not None:
             if fieldname in discovered:
                 resolved = ResolvedValue(

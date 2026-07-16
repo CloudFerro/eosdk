@@ -11,9 +11,12 @@ from rich.table import Table
 from eosdk.cli._state import build_client, friendly_errors, get_state, stdout
 from eosdk.config import loader, profiles
 from eosdk.config.settings import URL_FIELDS
+from eosdk.exceptions import ConfigError
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from eosdk.cli._state import CliState
 
 config_app = typer.Typer(no_args_is_help=True)
 
@@ -21,6 +24,59 @@ config_app = typer.Typer(no_args_is_help=True)
 def _config_path(ctx: typer.Context) -> Path:
     state = get_state(ctx)
     return state.user_config or loader.user_config_path()
+
+
+def _init_from_platform(
+    state: CliState, path: Path, platform: str, *, name: str | None, force: bool
+) -> tuple[str, str]:
+    """Fetch the platform's discovery document now, then pin every resolved
+    endpoint into a profile named after the platform (SPEC §6.2).
+
+    Returns ``(profile_name, status)``. A discovery-managed profile of the same
+    name is resynced wholesale without ``--force``; a user-owned one is a
+    conflict that ``--force`` overwrites. Hard-fails (the raised error propagates
+    through ``friendly_errors``) when the platform is unreachable or the document
+    is malformed — the profile is written only if discovery succeeds.
+    """
+    from eosdk.discovery.models import project_endpoints
+    from eosdk.discovery.resolver import DiscoveryResolver
+    from eosdk.transport import Transport
+
+    with Transport() as transport:
+        resolver = DiscoveryResolver(
+            platform=platform,
+            discovery_url=None,
+            transport=transport,
+            cache_dir=state.discovery_cache_dir,
+        )
+        document = resolver.document()
+        info = document.platform
+        resolved_name = name or (info.profile_name if info is not None else None)
+        if resolved_name is None:
+            raise ConfigError(
+                "platform discovery document advertises no usable name",
+                hint="pass an explicit --name",
+            )
+        values = dict(project_endpoints(document))
+        values["platform"] = platform
+        if info is not None and info.description:
+            values["description"] = info.description
+        discovered_from = resolver.url or ""
+
+    status = profiles.save_discovered_profile(
+        path, resolved_name, values=values, discovered_from=discovered_from
+    )
+    if status == "conflict":
+        if not force:
+            raise ConfigError(
+                f"profile {resolved_name!r} already exists and was not created from discovery",
+                hint="pass --force to overwrite it, or --name to pick another name",
+            )
+        values["discovered_from"] = discovered_from
+        profiles.init_profile(path, resolved_name, values, force=True)
+        status = "updated"
+    profiles.set_default_profile(path, resolved_name)
+    return resolved_name, status
 
 
 @config_app.command()
@@ -53,30 +109,40 @@ def show(
 @config_app.command()
 def init(
     ctx: typer.Context,
-    profile: Annotated[str, typer.Option("--name", prompt="Profile name")] = "default",
+    profile: Annotated[
+        str | None,
+        typer.Option("--name", help="Profile name; defaults to the platform's advertised name."),
+    ] = None,
     platform: Annotated[
         str | None,
         typer.Option("--platform", help="Platform root URL; endpoints discovered from it."),
     ] = None,
     force: Annotated[bool, typer.Option("--force", help="Overwrite an existing profile.")] = False,
 ) -> None:
-    """Create a profile: platform root, or manual endpoints when none is given."""
+    """Create a profile: discover a platform's endpoints, or enter them manually."""
     state = get_state(ctx)
     with friendly_errors(state):
-        values: dict[str, str] = {}
+        path = _config_path(ctx)
         if platform is None and typer.confirm("Use a single platform root URL?", default=True):
             platform = typer.prompt("Platform URL")
         if platform is not None:
-            values["platform"] = platform
-        else:
-            stdout.print("Manual endpoint entry (leave empty to skip):")
-            for fieldname in sorted(URL_FIELDS - {"discovery_url"}):
-                value = typer.prompt(fieldname, default="", show_default=False)
-                if value:
-                    values[fieldname] = value
-        path = _config_path(ctx)
-        profiles.init_profile(path, profile, values, force=force)
-        stdout.print(f"Profile [bold]{profile}[/bold] written to {path}")
+            name, status = _init_from_platform(state, path, platform, name=profile, force=force)
+            stdout.print(
+                f"Discovered platform; profile [bold]{name}[/bold] {status} "
+                f"(now default) in {path}\n"
+                "run [bold]eo config show[/bold] to see the resolved endpoints, "
+                "then [bold]eo doctor[/bold] to check they are reachable"
+            )
+            return
+        name = profile or typer.prompt("Profile name", default="default")
+        stdout.print("Manual endpoint entry (leave empty to skip):")
+        values: dict[str, str] = {}
+        for fieldname in sorted(URL_FIELDS - {"discovery_url"}):
+            value = typer.prompt(fieldname, default="", show_default=False)
+            if value:
+                values[fieldname] = value
+        profiles.init_profile(path, name, values, force=force)
+        stdout.print(f"Profile [bold]{name}[/bold] written to {path}")
 
 
 @config_app.command("set")

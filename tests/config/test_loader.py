@@ -141,6 +141,18 @@ class TestDiscoveryPending:
         assert cfg.platform == "https://p.example.eu"
         assert cfg.resolved()["eodata_http"].source == "discovery"
 
+    def test_discovery_url_derived_from_platform(self, tmp_path: Path, missing: Path) -> None:
+        # discovery_url is a location, not a discovered service: derivable, never pending
+        cfg = load(platform="https://p.example.eu", env={}, cwd=tmp_path, user_config=missing)
+        resolved = cfg.resolved()["discovery_url"]
+        assert resolved.source == "derived"
+        assert resolved.value == "https://p.example.eu/.well-known/eo-services.json"
+        assert resolved.display != PENDING
+
+    def test_discovery_url_unset_without_platform(self, tmp_path: Path, missing: Path) -> None:
+        cfg = load(env={}, cwd=tmp_path, user_config=missing)
+        assert cfg.resolved()["discovery_url"].source == "unset"
+
     def test_require_pending_raises_with_pin_hint(self, tmp_path: Path, missing: Path) -> None:
         cfg = load(platform="https://p.example.eu", env={}, cwd=tmp_path, user_config=missing)
         with pytest.raises(ConfigError, match="EOSDK_EODATA_HTTP_URL"):

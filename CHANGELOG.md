@@ -10,6 +10,15 @@ explicitly.
 
 ## [Unreleased]
 
+### Fixed
+
+- `eo config init --platform`: re-running it against a discovery-managed
+  profile of the same name now resyncs that profile in place instead of
+  failing with `profile '<name>' already exists (pass --force)`. `--force` is
+  still required only to overwrite a user-owned profile that happens to share
+  the name; pass `--name` to keep a hand-tuned profile separate from the
+  auto-managed one.
+
 ## [0.5.0] - 2026-07-16
 
 ### Added

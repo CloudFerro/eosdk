@@ -196,7 +196,9 @@ def _services_section(client: Client, *, force_ready: bool = False) -> Section:
                 where = f" (HTTP {exc.status_code})" if exc.status_code else ""
                 raise _ProbeFailure(
                     f"the S3 credentials service rejected the request{where}",
-                    hint="not authenticated — run `eo auth login` (minting S3 keys needs a session)",
+                    hint=(
+                        "not authenticated — run `eo auth login` (minting S3 keys needs a session)"
+                    ),
                 ) from exc
             raise
         except Exception as exc:

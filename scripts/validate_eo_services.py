@@ -103,9 +103,10 @@ def validate_file(path: Path, validator: Draft202012Validator) -> bool:
         print(f"✗ {path}: invalid JSON ({exc})")
         return False
 
-    problems: list[str] = []
-    for error in sorted(validator.iter_errors(document), key=lambda e: list(e.path)):
-        problems.append(f"{_pointer(error.path)}: {error.message}")
+    problems: list[str] = [
+        f"{_pointer(error.path)}: {error.message}"
+        for error in sorted(validator.iter_errors(document), key=lambda e: list(e.path))
+    ]
 
     if isinstance(document, dict):
         problems.extend(_semantic_errors(document))

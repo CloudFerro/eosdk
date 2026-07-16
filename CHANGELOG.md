@@ -16,6 +16,13 @@ explicitly.
 
 ### Fixed
 
+- `eo doctor`: the S3 credentials check no longer reports a false failure when
+  there is no session. Minting a managed key requires login, so without one the
+  check is now skipped (`-`, "not logged in — run `eo auth login`") rather than
+  failing, and the credentials service is not called. When a session *is*
+  present but the credentials service still rejects the request (HTTP 401/403,
+  or an anonymous call refused before login), the hint points at
+  `eo auth login` instead of misdirecting to the `s3_endpoint` config.
 - `eo config init --platform`: re-running it against a discovery-managed
   profile of the same name now resyncs that profile in place instead of
   failing with `profile '<name>' already exists (pass --force)`. `--force` is

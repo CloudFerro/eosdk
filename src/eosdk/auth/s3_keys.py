@@ -183,7 +183,8 @@ class S3KeysProvider:
             if method == "POST" and template == "credentials" and _is_key_limit(response, detail):
                 raise S3KeyLimitReached(detail=detail)
             raise AuthError(
-                f"S3 credentials service request failed with HTTP {response.status_code}: {detail}"
+                f"S3 credentials service request failed with HTTP {response.status_code}: {detail}",
+                status_code=response.status_code,
             )
         return response.json() if response.content else None
 

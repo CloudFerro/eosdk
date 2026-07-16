@@ -34,10 +34,12 @@ class AuthError(EosdkError):
         realm: str | None = None,
         profile: str | None = None,
         code: str | None = None,
+        status_code: int | None = None,
     ) -> None:
         self.realm = realm
         self.profile = profile
         self.code = code
+        self.status_code = status_code
         parts = [message]
         if realm is not None:
             parts.append(f"realm={realm!r}")

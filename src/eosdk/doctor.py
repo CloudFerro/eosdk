@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from eosdk.exceptions import ConfigError, EosdkError, UnsupportedApiVersion
+from eosdk.exceptions import AuthError, ConfigError, EosdkError, UnsupportedApiVersion
 from eosdk.transport import route
 
 if TYPE_CHECKING:
@@ -135,6 +135,15 @@ def _services_section(client: Client, *, force_ready: bool = False) -> Section:
     section = Section("Services")
     readiness = ReadinessProbe(client._readiness_cache_dir)
 
+    def logged_in() -> bool:
+        # Cache-only, no network. If auth isn't even configured there can be no
+        # session, so treat that as not-logged-in too.
+        try:
+            client.config.require("keycloak", service="keycloak")
+            return client.auth.status().logged_in
+        except EosdkError:
+            return False
+
     def eodata_ready(fieldname: str) -> Callable[[], str]:
         def check() -> str:
             base = client.config.require(fieldname, service=fieldname)
@@ -177,6 +186,19 @@ def _services_section(client: Client, *, force_ready: bool = False) -> Section:
     def s3_credentials() -> str:
         try:
             client._s3_downloader()._s3().list_buckets()
+        except AuthError as exc:
+            # Minting a managed key needs a valid session. Point at auth, not the
+            # endpoint — the endpoint hint would misdirect. Covers the credentials
+            # service rejecting the request (401/403) and _BearerAuth refusing an
+            # anonymous call before any status is known (status_code is None); a
+            # genuine server error (e.g. 500) is not an auth problem, so re-raise.
+            if exc.status_code in (None, 401, 403):
+                where = f" (HTTP {exc.status_code})" if exc.status_code else ""
+                raise _ProbeFailure(
+                    f"the S3 credentials service rejected the request{where}",
+                    hint="not authenticated — run `eo auth login` (minting S3 keys needs a session)",
+                ) from exc
+            raise
         except Exception as exc:
             code = getattr(exc, "response", None)
             code = code.get("Error", {}).get("Code", "") if isinstance(code, dict) else ""
@@ -197,17 +219,22 @@ def _services_section(client: Client, *, force_ready: bool = False) -> Section:
         "the eodata store behind this service reports itself unavailable — "
         "this is service-side, not a config problem; probes are rate-limited, retry later"
     )
-    for fieldname, name, probe, hint in (
-        ("catalogue_stac", "Catalogue (STAC)", stac, None),
-        ("catalogue_odata", "Catalogue (OData)", odata, None),
-        ("eodata_http", "EOData (HTTP)", eodata_ready("eodata_http"), ready_hint),
-        ("s3_endpoint", "S3 credentials", s3_credentials, None),
-        ("s3_endpoint", "EOData (S3)", eodata_ready("s3_endpoint"), ready_hint),
+    for fieldname, name, probe, hint, needs_session in (
+        ("catalogue_stac", "Catalogue (STAC)", stac, None, False),
+        ("catalogue_odata", "Catalogue (OData)", odata, None, False),
+        ("eodata_http", "EOData (HTTP)", eodata_ready("eodata_http"), ready_hint, False),
+        ("s3_endpoint", "S3 credentials", s3_credentials, None, True),
+        ("s3_endpoint", "EOData (S3)", eodata_ready("s3_endpoint"), ready_hint, False),
     ):
         try:
             client.config.require(fieldname, service=fieldname)
         except ConfigError as exc:
             section.results.append(_skip(name, str(exc)))
+            continue
+        # Minting a managed key needs a session; without one the probe can only
+        # fail, so skip rather than raise a false failure (SPEC §6.8).
+        if needs_session and not logged_in():
+            section.results.append(_skip(name, "not logged in — run `eo auth login`"))
             continue
         section.results.append(
             _probe(name, probe, hint=hint or f"check the {fieldname} endpoint in your profile")

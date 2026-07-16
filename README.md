@@ -16,9 +16,10 @@ Python SDK and CLI (`eo`) for Earth Observation services: unified catalogue sear
   Configuration resolves per field, from a single platform root down to individually
   pinned endpoints.
 - **Two modes, one eosdk.** No API knowledge needed: human-readable calls — `eo auth
-  login`, `eo search`, `eo download` — cover the whole workflow. The most demanding
-  users drop down to raw queries and the typed Python library, which shares the same
-  session, config, and endpoints.
+  login`, `eo search`, `eo download` — cover the whole workflow, and the typed Python
+  library mirrors them one-to-one (`client.auth.login()`, `client.search()`,
+  `client.download()`) on the same session, config, and endpoints. On top of that, raw
+  queries are available for the most demanding users.
 - **CDSE out of the box.** The Copernicus Data Space Ecosystem is the built-in default —
   no endpoints to configure before your first search.
 - **Search, then download, as one pipeline.** `eo search --format json | eo download -`

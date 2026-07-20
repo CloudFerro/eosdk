@@ -480,9 +480,7 @@ class TestKeyActivation:
             "https://s3.example.eu", credentials=CREDENTIALS, key_activation_timeout=timeout
         )
 
-    def test_retries_with_backoff_until_key_accepted(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_retries_with_backoff_until_key_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
         sleeps: list[float] = []
         monkeypatch.setattr("eosdk.eodata.s3.time.sleep", sleeps.append)
         gateway = _FlakyGateway(failures=2)

@@ -122,9 +122,9 @@ eosdk/
 │   ├── settings.py        # Endpoints + Profile models (pydantic)
 │   ├── loader.py          # resolution chain: kwargs > env (EOSDK_*) >
 │   │                      #   ./eosdk.toml > ~/.config/eosdk/config.toml >
-│   │                      #   discovery > built-in defaults
+│   │                      #   discovery
 │   ├── profiles.py        # profile CRUD, default_profile handling
-│   └── defaults.py        # built-in endpoints for known deployments
+│   └── defaults.py        # field -> EOSDK_* env-var map
 ├── discovery/
 │   ├── platform.py        # /.well-known/eo-services.json fetch + parse
 │   ├── oidc.py            # Keycloak openid-configuration resolution
@@ -195,7 +195,7 @@ class Endpoints(BaseModel):
     s3_region: str = "default"
     s3_credentials: HttpUrl         # S3 credentials service base URL
     keycloak: HttpUrl
-    keycloak_realm: str = "eodata"
+    keycloak_realm: str | None = None   # from local config or discovery
     discovery_url: HttpUrl | None = None   # overrides {platform}/.well-known/... derivation
 ```
 
@@ -206,7 +206,10 @@ class Endpoints(BaseModel):
 3. project-local `./eosdk.toml`
 4. user config `~/.config/eosdk/config.toml` (selected profile)
 5. remote discovery document (when a `platform` root is configured)
-6. built-in defaults for known deployments
+
+No built-in endpoint defaults exist for any deployment: a platform is
+configured locally or bootstrapped from its discovery document. Only
+deployment-agnostic model defaults (e.g. `s3_region = "default"`) apply.
 
 **Profiles** — named endpoint sets in the config file; `default_profile` key;
 a profile may define only `platform = "<root URL>"` and let discovery fill the
@@ -684,7 +687,7 @@ with client.open(product, path=band.path, via="s3") as f:
 ### 7.2 Library — configuration and discovery
 
 ```python
-Client()                                             # built-in defaults
+Client()                                             # local config (default profile)
 Client(profile="staging")
 Client(platform="https://platform.example.eu")       # single-root bootstrap
 Client(profile="prod",

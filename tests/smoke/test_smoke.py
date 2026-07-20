@@ -50,8 +50,8 @@ class TestAnonymous:
 
         sections = {s.name: s for s in run_doctor(client)}
         services = {r.name: r for r in sections["Services"].results}
-        assert services["STAC catalogue"].ok is True
-        assert services["OData catalogue"].ok is True
+        assert services["Catalogue (STAC)"].ok is True
+        assert services["Catalogue (OData)"].ok is True
 
 
 class TestAuthenticated:

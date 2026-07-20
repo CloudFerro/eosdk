@@ -7,7 +7,11 @@ Endpoints resolve per field, most specific wins:
 3. project-local `./eosdk.toml`
 4. user config `~/.config/eosdk/config.toml` (selected profile)
 5. remote discovery document (when a `platform` root is configured)
-6. built-in defaults (the Copernicus Data Space Ecosystem)
+
+There are no built-in deployment defaults: connect to a platform once with
+`eo config init --platform <root URL>` (for CDSE:
+`https://discover.dataspace.copernicus.eu`) or pin endpoints explicitly.
+Only generic conventions such as `s3_region = "default"` resolve on their own.
 
 `eo config show` (or `client.config.resolved()`) prints every endpoint with
 the source that provided it. Endpoints that only discovery can provide show

@@ -31,7 +31,7 @@ class Endpoints(BaseModel):
     legitimately stay unresolved (discovery-pending) at construction time.
 
     ``keycloak_client_id`` is an addition over the SPEC §6.1 model: auth cannot
-    work without it (SPEC §14.6 is unresolved; default is a placeholder).
+    work without it (SPEC §14.6 is unresolved).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -43,8 +43,8 @@ class Endpoints(BaseModel):
     s3_region: str = "default"
     s3_credentials: str | None = None
     keycloak: str | None = None
-    keycloak_realm: str = "CDSE"
-    keycloak_client_id: str = "cdse-public"
+    keycloak_realm: str | None = None
+    keycloak_client_id: str | None = None
     discovery_url: str | None = None
 
 

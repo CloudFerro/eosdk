@@ -16,7 +16,7 @@ def test_client_resolves_profile_endpoints(tmp_path: Path) -> None:
         resolved = client.config.resolved()
     assert client.config.endpoints.eodata_http == "http://localhost:8082"
     assert resolved["eodata_http"].source == f"profile:local({config})"
-    assert resolved["keycloak_realm"].source == "default"
+    assert resolved["keycloak_realm"].source == "unset"  # no built-in deployment defaults
 
 
 def test_client_kwargs_override(tmp_path: Path) -> None:
@@ -51,6 +51,8 @@ def test_odata_catalogue_memoized(tmp_path: Path) -> None:
         "[profiles.local]\n"
         'catalogue_odata = "http://localhost:8083/odata"\n'
         'keycloak = "http://localhost:8180"\n'
+        'keycloak_realm = "eodata"\n'
+        'keycloak_client_id = "eosdk-tests"\n'
     )
     with Client(
         profile="local", cwd=tmp_path, user_config=config, token_cache_dir=tmp_path / "tokens"

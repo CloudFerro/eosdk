@@ -8,9 +8,10 @@ Per-field precedence, most specific wins:
 4. user config ``~/.config/eosdk/config.toml`` (selected profile)
 5. remote discovery document (stubbed until Phase 3 — fields resolve to
    ``<pending>`` when a ``platform`` root is configured)
-6. built-in defaults
+6. field defaults declared on the ``Endpoints`` model (non-deployment-specific
+   conventions only, e.g. ``s3_region = "default"``; endpoint URLs have none)
 
-The ``platform`` root itself is resolved from local layers only (steps 1-4/6),
+The ``platform`` root itself is resolved from local layers only (steps 1-4),
 never from discovery — this breaks the config→discovery cycle (SPEC §4.2).
 """
 
@@ -23,7 +24,6 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from pydantic import ValidationError
 
-from eosdk.config import defaults as _defaults
 from eosdk.config.defaults import (
     ENV_PLATFORM,
     ENV_PROFILE,
@@ -210,7 +210,7 @@ def load(
             else:
                 resolved = ResolvedValue(None, "discovery")
         if resolved is None:
-            default = getattr(_defaults.BUILTIN_DEFAULTS, fieldname)
+            default = Endpoints.model_fields[fieldname].default
             resolved = ResolvedValue(default, "default" if default is not None else "unset")
         sources[fieldname] = resolved
         if resolved.value is not None:

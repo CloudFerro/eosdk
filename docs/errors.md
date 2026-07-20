@@ -17,3 +17,5 @@ possible, the config knob that fixes it.
 | `ProductNotFound` | catalogue get / download referenced an unknown product |
 | `DownloadError` | transfer failed after retries (incl. checksum mismatch) |
 | `QuotaExceeded` | service-side 429 (carries `retry_after` when provided) |
+| `S3KeyLimitReached` | the credentials service refused to create a key: the account's key cap is hit |
+| `S3KeyNotActive` | a freshly created S3 key was never accepted by the S3 gateway (usually the key cap again) |

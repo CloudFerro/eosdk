@@ -174,10 +174,12 @@ class Client:
         if self._auth is None:
             from eosdk.auth.keycloak import KeycloakAuth
 
+            # realm and client_id have no built-in default: they resolve from
+            # local config or the platform's discovery document, like the URL.
             self._auth = KeycloakAuth(
                 url=self._endpoint("keycloak", service="keycloak"),
-                realm=self.config.endpoints.keycloak_realm,
-                client_id=self.config.endpoints.keycloak_client_id,
+                realm=self._endpoint("keycloak_realm", service="keycloak"),
+                client_id=self._endpoint("keycloak_client_id", service="keycloak"),
                 transport=self._transport,
                 profile=self.config.profile or "default",
                 cache_dir=self._token_cache_dir,

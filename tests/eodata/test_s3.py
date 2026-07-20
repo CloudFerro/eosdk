@@ -440,3 +440,93 @@ class TestOpen:
         assert isinstance(fh, RangedS3File)
         buffered = io.BufferedReader(fh)  # duck-types as a file for libraries
         assert buffered.read(4) == safe_tree.FILES[self.B04][:4]
+
+
+class _FlakyGateway:
+    """boto3 client double: refuses a key N times before accepting it."""
+
+    def __init__(self, failures: int, code: str = "InvalidAccessKeyId") -> None:
+        self.failures = failures
+        self.code = code
+        self.calls = 0
+
+    def list_buckets(self) -> dict[str, Any]:
+        from botocore.exceptions import ClientError
+
+        self.calls += 1
+        if self.calls <= self.failures:
+            raise ClientError({"Error": {"Code": self.code}}, "ListBuckets")
+        return {}
+
+
+class _StubProvider:
+    """S3KeysProvider double: hands out fixed credentials, records labels."""
+
+    def __init__(self, credentials: S3Credentials) -> None:
+        self.credentials = credentials
+        self.labels: list[str] = []
+
+    def get_or_create(self, label: str) -> S3Credentials:
+        self.labels.append(label)
+        return self.credentials
+
+
+class TestKeyActivation:
+    """Fresh keys propagate to the S3 gateway asynchronously (normally
+    seconds); first use is gated on the gateway accepting the key."""
+
+    def _downloader(self, timeout: float = 60.0) -> S3Downloader:
+        return S3Downloader(
+            "https://s3.example.eu", credentials=CREDENTIALS, key_activation_timeout=timeout
+        )
+
+    def test_retries_with_backoff_until_key_accepted(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        sleeps: list[float] = []
+        monkeypatch.setattr("eosdk.eodata.s3.time.sleep", sleeps.append)
+        gateway = _FlakyGateway(failures=2)
+        self._downloader()._await_key_activation(gateway, "AK")
+        assert gateway.calls == 3
+        assert sleeps == [1.0, 2.0]  # doubling backoff between probes
+
+    def test_timeout_raises_diagnostic_error(self) -> None:
+        from eosdk.exceptions import S3KeyNotActive
+
+        gateway = _FlakyGateway(failures=10)
+        with pytest.raises(S3KeyNotActive, match="too many keys"):
+            self._downloader(timeout=0.0)._await_key_activation(gateway, "AK")
+        assert gateway.calls == 1  # deadline already passed after the first refusal
+
+    def test_unrelated_client_error_propagates(self) -> None:
+        # AccessDenied and friends are permanent, not propagation lag: re-raise.
+        from botocore.exceptions import ClientError
+
+        gateway = _FlakyGateway(failures=1, code="NoSuchBucket")
+        with pytest.raises(ClientError, match="NoSuchBucket"):
+            self._downloader()._await_key_activation(gateway, "AK")
+
+    def test_fresh_key_gates_first_use(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        provider = _StubProvider(
+            S3Credentials(access_key="AK", secret_key=SecretStr("SK"), created=True)
+        )
+        probed: list[str] = []
+        monkeypatch.setattr(
+            S3Downloader,
+            "_await_key_activation",
+            lambda self, client, access_key: probed.append(access_key),
+        )
+        S3Downloader("https://s3.example.eu", credentials=provider)._s3()
+        assert probed == ["AK"]
+        assert provider.labels == ["eosdk"]
+
+    def test_reused_key_skips_the_gate(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        provider = _StubProvider(S3Credentials(access_key="AK", secret_key=SecretStr("SK")))
+        probed: list[str] = []
+        monkeypatch.setattr(
+            S3Downloader,
+            "_await_key_activation",
+            lambda self, client, access_key: probed.append(access_key),
+        )
+        S3Downloader("https://s3.example.eu", credentials=provider)._s3()
+        assert probed == []  # a key served from the store was accepted before

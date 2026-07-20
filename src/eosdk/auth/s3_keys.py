@@ -51,6 +51,10 @@ class S3Credentials(BaseModel):
     expiration_date: str | None = None
     label: str | None = None  # client-side only; the service has no labels
     organization: str | None = None
+    # Client-side marker: True when this object was minted by the call that
+    # returned it. Fresh keys propagate to the S3 gateway asynchronously, so
+    # consumers gate first use on activation (see S3Downloader).
+    created: bool = False
 
     @property
     def key_id(self) -> str:  # canonical identifier for revoke/display
@@ -204,6 +208,7 @@ class S3KeysProvider:
             secret_key=SecretStr(str(payload["secret"])),
             expiration_date=payload.get("expiration_date"),
             label=label,
+            created=True,
         )
         if label is not None:
             self._store.put(label, credentials.access_key, credentials.require_secret())

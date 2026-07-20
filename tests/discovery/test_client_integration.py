@@ -64,7 +64,7 @@ class TestSingleRootBootstrap:
         assert resolved["keycloak_realm"].value == "eodata"
 
     @respx.mock
-    def test_discovered_client_id_beats_builtin_default(self, client: Client) -> None:
+    def test_discovered_client_id_resolves(self, client: Client) -> None:
         mock_platform()
         client._endpoint("keycloak", service="keycloak")
         resolved = client.config.resolved()

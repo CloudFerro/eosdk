@@ -11,7 +11,7 @@ One Python SDK — and one CLI, `eo` — for Earth Observation platform services
 ```python
 from eosdk import Client
 
-client = Client()  # built-in CDSE defaults; profiles/env override everything
+client = Client()  # your default profile (eo config init); or Client(platform=...)
 
 products = client.search(
     collection="sentinel-2-l2a",

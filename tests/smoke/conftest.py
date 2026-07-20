@@ -2,8 +2,10 @@
 
 Skipped unless EOSDK_SMOKE=1. Anonymous tests need only that; authenticated
 tests additionally need EOSDK_SMOKE_USERNAME / EOSDK_SMOKE_PASSWORD (and
-optionally EOSDK_SMOKE_PLATFORM or EOSDK_* endpoint pins; the built-in CDSE
-defaults are used otherwise). Tests are small and idempotent; ephemeral keys
+optionally EOSDK_SMOKE_PLATFORM or EOSDK_* endpoint pins; endpoints are
+otherwise discovered from the CDSE platform root,
+https://discover.dataspace.copernicus.eu). Tests are small and idempotent;
+ephemeral keys
 are revoked on context exit, and labeled keys created during a test are
 revoked in fixture teardown (their cache lives in tmp_path, so without
 revocation they would leak server-side on every run).
@@ -49,12 +51,6 @@ def _require_smoke() -> None:
         pytest.skip("live smoke disabled (set EOSDK_SMOKE=1)")
 
 
-@pytest.fixture(autouse=True)
-def _blank_builtin_defaults() -> None:
-    """Shadows the root conftest fixture: smoke tests want the real endpoints."""
-    return
-
-
 def _revoke_cached_keys(client: Client, keys_dir: Path) -> None:
     """Revoke labeled keys recorded in the test's throwaway cache.
 
@@ -81,7 +77,7 @@ def _revoke_cached_keys(client: Client, keys_dir: Path) -> None:
 
 @pytest.fixture
 def client(tmp_path: Path) -> Iterator[Client]:
-    platform = os.environ.get("EOSDK_SMOKE_PLATFORM")
+    platform = os.environ.get("EOSDK_SMOKE_PLATFORM", "https://discover.dataspace.copernicus.eu")
     with Client(
         platform=platform,
         cwd=tmp_path,

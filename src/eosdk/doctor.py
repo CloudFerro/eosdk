@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from eosdk.exceptions import AuthError, ConfigError, EosdkError, UnsupportedApiVersion
+from eosdk.exceptions import AuthError, EosdkError, UnsupportedApiVersion
 from eosdk.transport import route
 
 if TYPE_CHECKING:
@@ -109,9 +109,11 @@ def _config_section(client: Client) -> Section:
 def _auth_section(client: Client) -> Section:
     section = Section("Auth")
     try:
-        client.config.require("keycloak", service="keycloak")
-    except ConfigError:
-        section.results.append(_skip("OIDC discovery", "keycloak endpoint not configured"))
+        # _endpoint (not config.require): resolves discovery-pending fields by
+        # fetching the platform document on demand, like any service call would.
+        client._endpoint("keycloak", service="keycloak")
+    except EosdkError as exc:
+        section.results.append(_skip("OIDC discovery", str(exc)))
         return section
 
     def check_oidc() -> str:
@@ -229,8 +231,12 @@ def _services_section(client: Client, *, force_ready: bool = False) -> Section:
         ("s3_endpoint", "EOData (S3)", eodata_ready("s3_endpoint"), ready_hint, False),
     ):
         try:
-            client.config.require(fieldname, service=fieldname)
-        except ConfigError as exc:
+            # _endpoint triggers lazy discovery for <pending> fields; a field
+            # that stays unresolved (or an unreachable platform document —
+            # already reported as a failure in the Discovery section) skips
+            # the probe rather than crashing the run.
+            client._endpoint(fieldname, service=fieldname)
+        except EosdkError as exc:
             section.results.append(_skip(name, str(exc)))
             continue
         # Minting a managed key needs a session; without one the probe can only

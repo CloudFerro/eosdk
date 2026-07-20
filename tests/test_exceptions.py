@@ -11,6 +11,7 @@ from eosdk.exceptions import (
     ProductNotFound,
     QuotaExceeded,
     S3KeyLimitReached,
+    S3KeyNotActive,
     UnsupportedApiVersion,
     UnsupportedCapability,
     UnsupportedQueryFeature,
@@ -28,6 +29,7 @@ ALL_ERRORS = [
     DownloadError,
     QuotaExceeded,
     S3KeyLimitReached,
+    S3KeyNotActive,
 ]
 
 

@@ -26,10 +26,15 @@ Runnable, self-contained examples for the `eosdk` library and the `eo` CLI.
 pip install eosdk            # or, inside this repo: uv sync
 ```
 
-Most examples talk to a real platform. Out of the box the SDK targets the
-built-in defaults (Copernicus Data Space Ecosystem); anonymous catalogue
-search works without an account, while downloads, S3 keys, and auth examples
-need a logged-in session:
+Most examples talk to a real platform. Connect to one first — e.g. the
+Copernicus Data Space Ecosystem, used as the example platform throughout:
+
+```bash
+eo config init --platform https://discover.dataspace.copernicus.eu
+```
+
+Anonymous catalogue search then works without an account, while downloads,
+S3 keys, and auth examples need a logged-in session:
 
 ```bash
 eo auth login

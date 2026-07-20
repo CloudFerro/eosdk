@@ -20,8 +20,9 @@ Python SDK and CLI (`eo`) for Earth Observation services: unified catalogue sear
   library mirrors them one-to-one (`client.auth.login()`, `client.search()`,
   `client.download()`) on the same session, config, and endpoints. On top of that, raw
   queries are available for the most demanding users.
-- **CDSE out of the box.** The Copernicus Data Space Ecosystem is the built-in default —
-  no endpoints to configure before your first search.
+- **Any EO platform from one URL.** Point the SDK at a platform's discovery root —
+  for example CDSE's `https://discover.dataspace.copernicus.eu` — and every endpoint
+  is discovered from `/.well-known/eo-services.json`; nothing is hard-coded.
 - **Search, then download, as one pipeline.** `eo search --format json | eo download -`
   is the whole workflow; JSON Lines interoperate cleanly with `jq` and the Unix toolbox.
 - **Auth you never think about.** Log in once; the session is cached per profile and
@@ -33,8 +34,10 @@ Python SDK and CLI (`eo`) for Earth Observation services: unified catalogue sear
 
 ## Quickstart (the `eo` CLI)
 
-Examples use CDSE, the built-in default. Search is anonymous; **downloads require a
-login**.
+Examples use the Copernicus Data Space Ecosystem (CDSE) — one EO platform among
+those eosdk can talk to; any platform that publishes a discovery document works the
+same way, just with its own root URL and account. Search is anonymous; **downloads
+require a login**.
 
 **1 — Register** for a free account at **https://dataspace.copernicus.eu/** and confirm
 your email.
@@ -48,7 +51,15 @@ uv tool install --editable .   # makes `eo` available everywhere
 eo --help
 ```
 
-**3 — Log in** with username/password (the password is prompted, so it never lands in
+**3 — Connect to the platform.** One command discovers every endpoint from the
+platform root and saves them as your default profile:
+
+```bash
+eo config init --platform https://discover.dataspace.copernicus.eu
+eo config show   # every endpoint, with the source that provided it
+```
+
+**4 — Log in** with username/password (the password is prompted, so it never lands in
 your shell history):
 
 ```bash
@@ -60,7 +71,7 @@ eo auth status
 > but CDSE's public client currently has that grant disabled — use `--username` on CDSE.
 > For CI, pipe the password in with `--password-stdin`.
 
-**4 — Search.** A human-readable table by default:
+**5 — Search.** A human-readable table by default:
 
 ```bash
 eo search \
@@ -78,7 +89,7 @@ eo search \
 > `sentinel-2-l2a`; mission-level names like `SENTINEL-1` belong to OData
 > (`--protocol odata`). List what a catalogue offers with `eo discover`.
 
-**5 — Download.** Pipe `search --format json` (one product per line) straight into
+**6 — Download.** Pipe `search --format json` (one product per line) straight into
 `download`:
 
 ```bash
@@ -102,7 +113,7 @@ themselves. Install into a project with `uv sync` (or add the package as a depen
 import getpass
 from eosdk import Client
 
-client = Client()  # CDSE defaults; or Client(platform=...) / Client(profile=...)
+client = Client()  # your default profile (eo config init); or Client(platform=...) / Client(profile=...)
 
 if not client.auth.status().logged_in:
     client.auth.login("you@example.com", getpass.getpass())  # cached under ~/.config/eosdk/
@@ -123,12 +134,12 @@ raw-query escape hatches, and plugin backends.
 
 ## Setting up the platform
 
-CDSE works with zero configuration. A "platform" is a deployment of EO services
-(catalogue, download, keys, Keycloak); endpoints resolve **per field**, most specific
-source wins:
+A "platform" is a deployment of EO services (catalogue, download, keys, Keycloak).
+The SDK ships no built-in endpoints — you tell it which platform to talk to, once,
+and endpoints resolve **per field**, most specific source wins:
 
 ```
-Client kwargs  >  EOSDK_* env  >  ./eosdk.toml  >  user profile  >  discovery  >  built-in defaults
+Client kwargs  >  EOSDK_* env  >  ./eosdk.toml  >  user profile  >  discovery
 ```
 
 You rarely set every endpoint — point the SDK at a **platform root** and the rest are
@@ -189,10 +200,10 @@ export EOSDK_EODATA_HTTP_URL=http://localhost:8082  # override one endpoint only
 from a static bucket/CDN), the main domain root, or any URL via `discovery_url` /
 `EOSDK_DISCOVERY_URL`.
 
-> CDSE's discovery document will be published at
-> **`https://discover.dataspace.copernicus.eu`**. It is not live yet — until then the
-> built-in defaults cover CDSE; once published you can bootstrap from it explicitly with
-> `eo config init --platform https://discover.dataspace.copernicus.eu`.
+> CDSE's discovery document is live at
+> **`https://discover.dataspace.copernicus.eu`** —
+> `eo config init --platform https://discover.dataspace.copernicus.eu` bootstraps a
+> ready-to-use profile from it.
 
 ## Installation
 

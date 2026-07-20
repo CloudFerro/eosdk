@@ -14,8 +14,35 @@ explicitly.
 
 - schema validator for eo-services
 
+### Changed
+
+- **Breaking:** the built-in CDSE endpoint defaults are removed. CDSE now
+  publishes its discovery document at
+  `https://discover.dataspace.copernicus.eu/.well-known/eo-services.json`, so
+  the SDK no longer hard-codes any deployment. Connect to a platform once with
+  `eo config init --platform https://discover.dataspace.copernicus.eu` (or
+  `Client(platform=...)` / `EOSDK_PLATFORM`); a bare `Client()` with no local
+  configuration resolves nothing, and first use of a service raises
+  `ConfigError` naming the exact knob to set. `keycloak_realm` and
+  `keycloak_client_id` lost their CDSE defaults (`CDSE` / `cdse-public`) and
+  now resolve from local config or discovery like every other field; the
+  deployment-agnostic `s3_region = "default"` is the only remaining model
+  default. Smoke tests likewise discover endpoints from the CDSE platform
+  root unless `EOSDK_SMOKE_PLATFORM` overrides it.
+
 ### Fixed
 
+- S3 backend: first use of a freshly minted S3 key no longer races key
+  propagation. Key pairs reach the S3 gateway asynchronously (normally
+  seconds), so the first request with a new key could fail with a raw
+  `InvalidAccessKeyId` botocore error. The downloader now gates first use on
+  the gateway accepting the key (cheap probe, doubling backoff, 60 s cap);
+  a key that never activates raises the new `S3KeyNotActive` with the
+  likely cause (account key cap) and the `eo keys` commands to fix it.
+- `eo doctor`: service and auth probes now trigger platform discovery for
+  `<pending>` endpoints (as any service call would) instead of skipping them
+  as unconfigured. Previously a discovery-based profile with no pinned
+  endpoints had every Services check reported as skipped, never probed.
 - `eo doctor`: the S3 credentials check no longer reports a false failure when
   there is no session. Minting a managed key requires login, so without one the
   check is now skipped (`-`, "not logged in — run `eo auth login`") rather than

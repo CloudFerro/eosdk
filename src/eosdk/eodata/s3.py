@@ -18,6 +18,7 @@ import hashlib
 import io
 import os
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -30,7 +31,7 @@ from eosdk.eodata._transfer import (
     save_state,
 )
 from eosdk.eodata.base import DownloadReport, EventKind, ProgressEvent
-from eosdk.exceptions import DownloadError, ProductNotFound
+from eosdk.exceptions import DownloadError, ProductNotFound, S3KeyNotActive
 from eosdk.models import Node
 
 if TYPE_CHECKING:
@@ -41,6 +42,11 @@ if TYPE_CHECKING:
 
 DEFAULT_PART_SIZE = 16 * 2**20  # 16 MiB
 KEY_LABEL = "eosdk"
+# A fresh key pair propagates from the credentials service to the S3 gateway
+# asynchronously — normally seconds; until then the gateway rejects it with
+# these codes. First use of a freshly minted key is gated on activation.
+KEY_ACTIVATION_TIMEOUT = 60.0
+_KEY_NOT_READY_CODES = frozenset({"InvalidAccessKeyId", "SignatureDoesNotMatch"})
 
 
 class S3Downloader:
@@ -57,10 +63,12 @@ class S3Downloader:
         max_ranges_per_file: int = 4,
         path_style: bool = True,
         verify: bool = True,
+        key_activation_timeout: float = KEY_ACTIVATION_TIMEOUT,
     ) -> None:
         self._endpoint = endpoint
         self._region = region
         self._credentials = credentials
+        self._key_activation_timeout = key_activation_timeout
         self._part_size = part_size
         self._max_ranges_per_file = max_ranges_per_file
         self._path_style = path_style
@@ -79,7 +87,7 @@ class S3Downloader:
                 credentials = self._credentials
                 if hasattr(credentials, "get_or_create"):  # S3KeysProvider
                     credentials = credentials.get_or_create(label=KEY_LABEL)
-                self._client = boto3.client(
+                client = boto3.client(
                     "s3",
                     endpoint_url=self._endpoint,
                     region_name=self._region,
@@ -91,7 +99,41 @@ class S3Downloader:
                         retries={"max_attempts": 5, "mode": "adaptive"},
                     ),
                 )
+                if credentials.created:
+                    self._await_key_activation(client, credentials.access_key)
+                self._client = client
             return self._client
+
+    def _await_key_activation(self, client: Any, access_key: str) -> None:
+        """Block until the S3 gateway accepts a freshly minted key.
+
+        Key pairs propagate from the credentials service to the gateway
+        asynchronously — normally seconds (CDSE's own examples sleep after
+        creating one); until then requests fail with InvalidAccessKeyId.
+        Poll a cheap call with backoff and, on timeout, diagnose the
+        never-provisioned case instead of leaking a raw botocore error.
+        """
+        from botocore.exceptions import ClientError
+
+        deadline = time.monotonic() + self._key_activation_timeout
+        delay = 1.0
+        while True:
+            try:
+                client.list_buckets()
+            except ClientError as exc:
+                code = str(exc.response.get("Error", {}).get("Code", ""))
+                if code not in _KEY_NOT_READY_CODES:
+                    raise
+                if time.monotonic() >= deadline:
+                    raise S3KeyNotActive(
+                        access_key=access_key,
+                        waited=self._key_activation_timeout,
+                        code=code,
+                    ) from exc
+                time.sleep(delay)
+                delay = min(delay * 2, 5.0)
+            else:
+                return
 
     # -- addressing -------------------------------------------------------------
 

@@ -8,13 +8,16 @@ What this shows
     3. project-local ``./eosdk.toml``
     4. user config ``~/.config/eosdk/config.toml`` (selected profile)
     5. the platform's remote discovery document
-    6. built-in defaults (Copernicus Data Space Ecosystem)
+
+  There are no built-in deployment defaults: endpoints come from your config
+  or from a platform's discovery document (for CDSE:
+  ``https://discover.dataspace.copernicus.eu``).
 * inspecting the resolved configuration and where each value came from
 * single-root bootstrap: give one platform URL, discover the rest
 * the service discovery document
 
-Prerequisites: none for the defaults; the discovery section needs a platform
-root (see ``docker/discovery/`` in this repo for a local one).
+Prerequisites: none for the inspection part; the discovery section needs a
+platform root (see ``docker/discovery/`` in this repo for a local one).
 """
 
 from __future__ import annotations
@@ -23,7 +26,9 @@ from eosdk import Client
 
 
 def main() -> None:
-    # -- defaults: no arguments -> built-in CDSE endpoints -------------------------
+    # -- no arguments -> whatever your local config resolves ------------------------
+    # (profiles created with `eo config init`, env vars, ./eosdk.toml). With no
+    # configuration at all, endpoints stay '<unset>' until you connect a platform.
     with Client() as client:
         print(f"profile: {client.config.profile or '(none)'}")
         # Every endpoint with its value and the layer that provided it.

@@ -196,6 +196,28 @@ class S3KeyLimitReached(EosdkError):
         )
 
 
+class S3KeyNotActive(EosdkError):
+    """A freshly created S3 key was not accepted by the S3 endpoint in time.
+
+    Key pairs propagate from the credentials service to the S3 gateway
+    asynchronously; normally that takes seconds. A key the gateway never
+    accepts usually means the account holds too many keys — the credentials
+    service lists it, but the gateway never provisioned it.
+    """
+
+    def __init__(self, *, access_key: str, waited: float, code: str) -> None:
+        self.access_key = access_key
+        self.waited = waited
+        self.code = code
+        super().__init__(
+            f"the S3 endpoint did not accept freshly created key {access_key!r} "
+            f"within {waited:.0f}s ({code}) — propagation normally takes seconds; "
+            "a key that never activates usually means the account holds too many "
+            "keys — revoke unused ones (`eo keys list`, `eo keys revoke <access_id>`) "
+            "and retry"
+        )
+
+
 class QuotaExceeded(EosdkError):
     """The service answered 429 / quota exhausted."""
 

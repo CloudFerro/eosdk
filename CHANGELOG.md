@@ -58,6 +58,13 @@ explicitly.
 
 ### Fixed
 
+- A read timeout (the endpoint accepts the connection but never answers — e.g.
+  a slow or stalled catalogue search) no longer masquerades as
+  `EndpointUnreachable` telling you to "check the endpoint URL". It now raises
+  the new `ServiceTimeout` (a subclass of `EndpointUnreachable`, so existing
+  handlers still catch it) naming the elapsed timeout and advising a retry or a
+  higher `Client(timeout=...)`. Connect failures (refused/DNS/connect timeout)
+  keep the original URL-checking guidance.
 - S3 backend: first use of a freshly minted S3 key no longer races key
   propagation. Key pairs reach the S3 gateway asynchronously (normally
   seconds), so the first request with a new key could fail with a raw

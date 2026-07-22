@@ -9,7 +9,8 @@ possible, the config knob that fixes it.
 |---|---|
 | `ConfigError` | bad TOML, unknown profile, missing/pending endpoint |
 | `AuthError` | login/refresh failure; 401 persisting after a forced refresh |
-| `EndpointUnreachable` | connect/timeout on first use or during `eo doctor` |
+| `EndpointUnreachable` | no connection could be established (refused/DNS/connect timeout), on first use or during `eo doctor` |
+| `ServiceTimeout` | the service was reached but did not respond within the timeout (subclass of `EndpointUnreachable`) |
 | `UnsupportedApiVersion` | a service advertises a version outside the supported range |
 | `UnsupportedQueryFeature` | a query construct the chosen backend cannot express |
 | `UnsupportedCapability` | no available strategy supports the operation (`download`/`list`/`open`) |

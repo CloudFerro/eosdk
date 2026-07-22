@@ -12,6 +12,7 @@ from eosdk.exceptions import (
     QuotaExceeded,
     S3KeyLimitReached,
     S3KeyNotActive,
+    ServiceTimeout,
     UnsupportedApiVersion,
     UnsupportedCapability,
     UnsupportedQueryFeature,
@@ -21,6 +22,7 @@ ALL_ERRORS = [
     ConfigError,
     AuthError,
     EndpointUnreachable,
+    ServiceTimeout,
     UnsupportedApiVersion,
     UnsupportedQueryFeature,
     UnsupportedCapability,
@@ -62,6 +64,17 @@ def test_endpoint_unreachable_names_service_url_hint() -> None:
     assert "eodata_http" in msg
     assert "https://z.example.eu" in msg
     assert "EOSDK_EODATA_HTTP_URL" in msg
+
+
+def test_service_timeout_is_endpoint_unreachable_without_unreachable_wording() -> None:
+    err = ServiceTimeout(service="catalogue_stac", url="https://z.example.eu/search", timeout=30.0)
+    assert isinstance(err, EndpointUnreachable)  # existing handlers still catch it
+    msg = str(err)
+    assert "catalogue_stac" in msg
+    assert "https://z.example.eu/search" in msg
+    assert "unreachable" not in msg  # the URL is fine — don't imply otherwise
+    assert "30s" in msg
+    assert err.timeout == 30.0
 
 
 def test_unsupported_api_version_message() -> None:

@@ -54,8 +54,9 @@ eo search --collection sentinel-2-l2a --from 2026-06-01 --to 2026-06-08 \
 # -- 6. inspect the catalogue vocabulary (anonymous, like search) ------------------
 # Which collection ids can I search? STAC uses product-level ids
 # (`sentinel-2-l2a`), OData mission-level names (`SENTINEL-2`).
+# Important: The OData protocol does not provide collection endpoints, so `eo collections`
+# is a convenience for the STAC protocol only.
 eo collections
-eo collections --protocol odata --json | jq -r '.[].id'
 
 # What can I put in --filter for a collection? The names print here are usable
 # verbatim as --filter keys for the same protocol.

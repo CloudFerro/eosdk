@@ -528,7 +528,7 @@ credentials service:
   `queryables(collection) -> list[Queryable]` (filterable attributes: STAC
   `/queryables`, CSC OData `Attributes(<collection>)`; names are backend-native
   and raise `UnsupportedQueryFeature` where the backend has no such endpoint).
-- `protocol="stac" | "odata"` selectable per call; default from config.
+- `protocol="stac" | "odata"` selectable per call; default `stac`.
 - Both backends translate the shared `Query` object (see §5) and normalize
   results to `Product`.
 - Transparent pagination in `SearchResult`; per-page fetch uses the shared
@@ -753,9 +753,10 @@ eo keys list
 eo keys revoke <key-id>
 eo keys create --export              # AWS_ACCESS_KEY_ID=... for aws/rclone interop
 
-# catalogue inspection (each mirrors the like-named Client method)
-eo collections --protocol odata               # collection ids   == client.collections()
-eo queryables SENTINEL-1 --protocol odata      # filterable attrs == client.queryables()
+# catalogue inspection (each mirrors the like-named Client method; default protocol stac)
+eo collections                                 # collection ids   == client.collections()
+eo queryables SENTINEL-1                        # filterable attrs == client.queryables()
+eo collections --protocol odata                # ...or pick a backend explicitly
 
 # search & download
 eo search --collection SENTINEL-1 \

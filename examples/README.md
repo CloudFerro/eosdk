@@ -14,7 +14,7 @@ Runnable, self-contained examples for the `eosdk` library and the `eo` CLI.
 | [python/06_error_handling.py](python/06_error_handling.py) | The exception taxonomy and how to react to each error |
 | [python/07_raw_queries.py](python/07_raw_queries.py) | Escape hatches: raw OData queries, raw STAC bodies, `Product.raw` |
 | [python/08_plugin_backend.py](python/08_plugin_backend.py) | Extending the SDK with third-party catalogue/downloader plugins |
-| [cli/01_search_and_download.sh](cli/01_search_and_download.sh) | `eo search` piped into `eo download`, JSON Lines + `jq` |
+| [cli/01_search_and_download.sh](cli/01_search_and_download.sh) | `eo search` piped into `eo download`, JSON Lines + `jq`; catalogue inspection (`collections`, `queryables`, `get`) and product files (`list`, `cat`) |
 | [cli/02_auth.sh](cli/02_auth.sh) | Device flow, password login, status in scripts |
 | [cli/03_s3_keys.sh](cli/03_s3_keys.sh) | Key lifecycle, `--export` for aws-cli / rclone |
 | [cli/04_config_profiles.sh](cli/04_config_profiles.sh) | Profiles, per-endpoint pins, `eo config show` |

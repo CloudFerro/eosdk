@@ -51,7 +51,7 @@ eo queryables <collection> [--protocol] [--json] # a collection's --filter attri
 ```bash
 eo download <uuid> [-o DIR] [--via http|s3] [-c N] [--resume/--no-resume] [--no-checksum]
 eo download s3://eodata/.../PRODUCT.SAFE --via s3
-eo search ... --json | eo download - --via s3 -c 8
+eo search ... --format json | eo download - --via s3 -c 8
 eo download $(eo search ... --format id) -o ./data
 
 eo list <uuid> [PATH] [--via http|s3] [-r] [--json]   # files inside a product

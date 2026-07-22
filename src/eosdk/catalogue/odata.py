@@ -25,7 +25,6 @@ ROUTES = {
     "v1": {
         "products": "odata/v1/Products",
         "product_by_id": "odata/v1/Products({id})",
-        "collections": "odata/v1/Collections",
         "attributes": "odata/v1/Attributes({collection})",
     }
 }
@@ -115,16 +114,11 @@ class ODataCatalogue:
         return _entry_to_product(response.json())
 
     def collections(self) -> list[Collection]:
-        document = self._get(route(self._base, ROUTES[self.api_version]["collections"]))
-        return [
-            Collection(
-                id=entry.get("Name", entry.get("Id", "")),
-                title=entry.get("DisplayName") or entry.get("Name"),
-                description=entry.get("Description"),
-                raw=entry,
-            )
-            for entry in document.get("value", [])
-        ]
+        # The CSC/OData API exposes no collection-enumeration endpoint: a
+        # collection is only a navigation property on Products (filtered via
+        # `Collection/Name eq '...'`), never a listable entity set. Discover
+        # ids via the STAC backend instead (SPEC §6.5).
+        raise UnsupportedQueryFeature(backend=self.backend, feature="collections")
 
     def queryables(self, collection: str) -> list[Queryable]:
         """Filterable attributes from the CSC ``Attributes(<collection>)`` endpoint."""

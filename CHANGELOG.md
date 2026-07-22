@@ -13,9 +13,35 @@ explicitly.
 ### Added
 
 - schema validator for eo-services
+- CLI commands `eo get`, `eo collections`, `eo queryables`, `eo list`, and
+  `eo cat`, mirroring `client.get()`, `client.collections()`,
+  `client.queryables()`, `client.list()`, and `client.open()` so the whole
+  high-level surface is reachable from both interfaces.
+- `eo download --resume/--no-resume`, exposing the existing
+  `client.download(resume=...)` knob on the CLI (default on: the s3 backend
+  resumes partial files, http restarts).
+- `eo keys create --fresh` to force a new key pair (`client.keys.create`)
+  instead of reusing the labeled one (`client.keys.get_or_create`, still the
+  default with `--label`).
+- Public profile-management API on `eosdk.config` (`init_profile`, `set_value`,
+  `set_default_profile`, `list_profiles`, `get_default_profile`,
+  `save_discovered_profile`, `user_config_path`), mirroring the
+  `eo config init/set/use/profiles` commands for library callers.
+- `ODataCatalogue` is now exported from `eosdk.catalogue`, and `S3KeysProvider`
+  /`S3Credentials` from `eosdk.auth` (matching `StacCatalogue` and
+  `S3Downloader`).
 
 ### Changed
 
+- **Breaking:** `client.search()` now refuses an unbounded query (no
+  collection/bbox/datetime/filter), raising `ConfigError` — matching `eo search`
+  and the OData backend, which already refused; previously the default STAC
+  backend ran it. Give at least one constraint.
+- **Breaking:** the S3 key identifier is now named `access_key` everywhere:
+  `eo keys list --json` emits it under `access_key` (was `access_id`, matching
+  the `S3Credentials.access_key` attribute and the `AWS_ACCESS_KEY_ID` export),
+  and `S3KeysProvider.revoke()`'s parameter is renamed `access_id` →
+  `access_key`. `S3Credentials.key_id` remains an alias for `access_key`.
 - **Breaking:** the built-in CDSE endpoint defaults are removed. CDSE now
   publishes its discovery document at
   `https://discover.dataspace.copernicus.eu/.well-known/eo-services.json`, so

@@ -28,6 +28,32 @@ def config(tmp_path: Path) -> Path:
     return tmp_path / "config.toml"
 
 
+def test_public_config_api_mirrors_cli(config: Path) -> None:
+    """The profile-management functions the CLI uses are also the public
+    library API (re-exported from eosdk.config), mirroring eo config
+    init/set/use/profiles for library callers."""
+    import eosdk.config as config_api
+
+    for name in (
+        "init_profile",
+        "set_value",
+        "set_default_profile",
+        "list_profiles",
+        "get_default_profile",
+        "save_discovered_profile",
+        "user_config_path",
+    ):
+        assert name in config_api.__all__
+        assert hasattr(config_api, name)
+
+    config_api.init_profile(config, "prod", {"platform": "https://p.example.eu"})
+    config_api.set_value(config, "profiles.prod.eodata_http", "https://d.example.eu")
+    config_api.set_default_profile(config, "prod")
+    assert config_api.get_default_profile(config) == "prod"
+    profiles = config_api.list_profiles(config)
+    assert profiles["prod"].eodata_http == "https://d.example.eu"
+
+
 class TestSaveDiscoveredProfile:
     def test_first_use_creates_marked_profile(self, config: Path) -> None:
         status = save_discovered_profile(

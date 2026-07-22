@@ -13,7 +13,7 @@ eo keys create --label my-pipeline
 
 # -- 2. list keys (secrets never shown) ---------------------------------------------
 eo keys list
-eo keys list --json | jq -r '.[].access_id'
+eo keys list --json | jq -r '.[].access_key'
 
 # -- 3. export for aws-cli / rclone ----------------------------------------------------
 # Prints AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_ENDPOINT_URL lines;

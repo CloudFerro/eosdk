@@ -23,16 +23,30 @@ keys_app = typer.Typer(no_args_is_help=True)
 def create(
     ctx: typer.Context,
     label: Annotated[str | None, typer.Option("--label", "-l")] = None,
+    fresh: Annotated[
+        bool,
+        typer.Option(
+            "--fresh",
+            help="Always mint a new key (client.keys.create) instead of reusing the labeled one.",
+        ),
+    ] = False,
     export: Annotated[
         bool,
         typer.Option("--export", help="Print AWS_* env assignments (includes the secret)."),
     ] = False,
 ) -> None:
-    """Create a key pair (reuses the labeled pair if one exists)."""
+    """Create a key pair.
+
+    With ``--label`` the labeled pair is reused if it still exists
+    (``client.keys.get_or_create``); ``--fresh`` forces a new key
+    (``client.keys.create``), which may hit the account key cap.
+    """
     state = get_state(ctx)
     with friendly_errors(state), build_client(state) as client:
         provider = client.keys
-        credentials = provider.get_or_create(label) if label else provider.create()
+        credentials = (
+            provider.get_or_create(label) if label and not fresh else provider.create(label=label)
+        )
         if export:
             endpoint = client.config.endpoints.s3_endpoint
             print(f"AWS_ACCESS_KEY_ID={credentials.access_key}")
@@ -59,7 +73,7 @@ def list_(
                 json.dumps(
                     [
                         {
-                            "access_id": e.access_key,
+                            "access_key": e.access_key,
                             "organization": e.organization,
                             "expiration_date": e.expiration_date,
                             "label": e.label,
@@ -89,13 +103,13 @@ def list_(
 @keys_app.command()
 def revoke(
     ctx: typer.Context,
-    access_id: Annotated[str, typer.Argument(help="The key's access id.")],
+    access_key: Annotated[str, typer.Argument(help="The key's access key.")],
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation.")] = False,
 ) -> None:
     """Revoke a key pair."""
     state = get_state(ctx)
     with friendly_errors(state), build_client(state) as client:
         if not yes:
-            typer.confirm(f"Revoke S3 key {access_id!r}?", abort=True)
-        client.keys.revoke(access_id)
-        stdout.print(f"revoked [bold]{access_id}[/bold]")
+            typer.confirm(f"Revoke S3 key {access_key!r}?", abort=True)
+        client.keys.revoke(access_key)
+        stdout.print(f"revoked [bold]{access_key}[/bold]")

@@ -57,7 +57,7 @@ class S3Credentials(BaseModel):
     created: bool = False
 
     @property
-    def key_id(self) -> str:  # canonical identifier for revoke/display
+    def key_id(self) -> str:  # alias for access_key (the canonical public identifier)
         return self.access_key
 
     def require_secret(self) -> str:
@@ -243,13 +243,15 @@ class S3KeysProvider:
                 break
         return entries
 
-    def revoke(self, access_id: str) -> None:
+    def revoke(self, access_key: str) -> None:
+        # The service's wire path segment is literally "access_id"; only the
+        # public parameter name is the canonical "access_key".
         self._request(
             "DELETE",
             "credentials/access_id/{access_id}",
-            route_params={"access_id": access_id},
+            route_params={"access_id": access_key},
         )
-        self._store.drop_key(access_id)
+        self._store.drop_key(access_key)
 
     def get_or_create(self, label: str) -> S3Credentials:
         """Labeled-reuse policy (SPEC §6.4 default), implemented client-side."""

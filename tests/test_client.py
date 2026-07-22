@@ -35,6 +35,20 @@ def test_client_importable_from_package_root() -> None:
     assert RootClient is Client
 
 
+def test_search_refuses_unbounded_query(tmp_path: Path) -> None:
+    # The refusal is shared with `eo search`: identical behaviour on both
+    # surfaces (SPEC §6.5). It fires before any endpoint/network use.
+    import pytest
+
+    from eosdk.exceptions import ConfigError
+
+    with Client(cwd=tmp_path, user_config=tmp_path / "missing.toml") as client:
+        with pytest.raises(ConfigError, match="unbounded"):
+            client.search()
+        with pytest.raises(ConfigError, match="unbounded"):
+            client.search(limit=10)  # a bare limit is not a constraint
+
+
 def test_context_manager_closes_transport(tmp_path: Path) -> None:
     client = Client(cwd=tmp_path, user_config=tmp_path / "missing.toml")
     with client:

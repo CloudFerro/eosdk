@@ -68,6 +68,26 @@ class TestCreate:
         assert SECRET not in result.output  # the security regression test
         assert ACCESS_ID in result.output  # access id is public, shown in full
 
+    def test_fresh_forces_new_key_instead_of_reuse(
+        self, invoke: Invoke, platform_mocks: respx.Router
+    ) -> None:
+        install_keys_routes(platform_mocks)
+        login(invoke)
+
+        def posts() -> int:
+            return sum(
+                1
+                for c in platform_mocks.calls
+                if c.request.method == "POST" and str(c.request.url) == CREDENTIALS_URL
+            )
+
+        invoke("keys", "create", "--label", "p")  # first: mints + stores locally
+        after_first = posts()
+        invoke("keys", "create", "--label", "p")  # reuse (get_or_create): no new POST
+        assert posts() == after_first
+        invoke("keys", "create", "--label", "p", "--fresh")  # forced create: new POST
+        assert posts() == after_first + 1
+
     def test_export_emits_eval_safe_env(self, invoke: Invoke, platform_mocks: respx.Router) -> None:
         install_keys_routes(platform_mocks)
         login(invoke)
@@ -109,7 +129,7 @@ class TestListAndRevoke:
         invoke("keys", "create", "--label", "my-pipeline")
         result = invoke("keys", "list", "--json")
         assert result.exit_code == 0, result.output
-        by_id = {entry["access_id"]: entry for entry in json.loads(result.output)}
+        by_id = {entry["access_key"]: entry for entry in json.loads(result.output)}
         assert by_id[ACCESS_ID]["label"] == "my-pipeline"
         assert by_id[ACCESS_ID]["local_secret"] is True
         assert by_id[FOREIGN_ACCESS_ID]["local_secret"] is False

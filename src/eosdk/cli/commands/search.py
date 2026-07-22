@@ -8,7 +8,6 @@ import typer
 from rich.table import Table
 
 from eosdk.cli._state import build_client, friendly_errors, get_state, stderr, stdout
-from eosdk.exceptions import ConfigError
 
 _FORMATS = ("table", "json", "id", "s3")
 
@@ -69,12 +68,9 @@ def search(
     if fmt not in _FORMATS:
         raise typer.BadParameter(f"--format must be one of: {', '.join(_FORMATS)}")
     state = get_state(ctx)
+    # An unbounded search is refused inside client.search() (shared with the
+    # library), so nothing more is needed here.
     with friendly_errors(state), build_client(state) as client:
-        if bbox is None and collection is None and not (filters or date_from or date_to):
-            raise ConfigError(
-                "refusing an unbounded search",
-                hint="give at least --collection, --bbox, --from/--to, or --filter",
-            )
         results = client.search(
             collection=collection,
             bbox=_parse_bbox(bbox),

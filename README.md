@@ -87,7 +87,8 @@ eo search \
 > `--collection` / `--bbox` / `--from`+`--to` / `--filter`.
 > Collection ids are backend vocabulary: STAC (the default) uses product-level ids like
 > `sentinel-2-l2a`; mission-level names like `SENTINEL-1` belong to OData
-> (`--protocol odata`). List what a catalogue offers with `eo discover`.
+> (`--protocol odata`). List a catalogue's collection ids with `eo collections`, and a
+> collection's filterable attributes with `eo queryables <collection>`.
 
 **6 — Download.** Pipe `search --format json` (one product per line) straight into
 `download`:
@@ -194,7 +195,8 @@ export EOSDK_EODATA_HTTP_URL=http://localhost:8082  # override one endpoint only
 ```
 
 **In code** — `Client(...)` kwargs win over everything:
-`Client(platform=...)`, `Client(profile="prod")`, `Client(eodata_http=...)`.
+`Client(platform=...)`, `Client(profile="prod")`,
+`Client(endpoints={"eodata_http": ...})`.
 
 **Where the discovery document lives** — a dedicated subdomain (recommended, servable
 from a static bucket/CDN), the main domain root, or any URL via `discovery_url` /

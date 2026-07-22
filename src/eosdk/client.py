@@ -299,6 +299,14 @@ class Client:
         sort: str | None = None,
         protocol: str = "stac",
     ) -> SearchResult:
+        # Refuse an unbounded search on both surfaces (SPEC §6.5): the CLI and
+        # the library share this guard so identical inputs behave identically,
+        # and it also settles the STAC-permits/OData-refuses split below it.
+        if collection is None and bbox is None and not datetime and not filters:
+            raise ConfigError(
+                "refusing an unbounded search",
+                hint="narrow it with a collection, bbox, datetime range, or filter",
+            )
         query = Query(
             collection=collection,
             bbox=bbox,

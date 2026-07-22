@@ -31,8 +31,8 @@ Searching public catalogues needs no login at all.
 
 | Concern | Module | CLI |
 |---|---|---|
-| Search | `eosdk.catalogue` (STAC + OData) | `eo search` |
-| Download / list / open | `eosdk.eodata` (HTTP + S3) | `eo download` |
+| Search / inspect | `eosdk.catalogue` (STAC + OData) | `eo search`, `eo get`, `eo collections`, `eo queryables` |
+| Download / list / open | `eosdk.eodata` (HTTP + S3) | `eo download`, `eo list`, `eo cat` |
 | Auth & S3 keys | `eosdk.auth` | `eo auth`, `eo keys` |
 | Configuration | `eosdk.config` | `eo config` |
 | Service discovery | `eosdk.discovery` | `eo discover` |

@@ -32,6 +32,11 @@ explicitly.
   `S3Downloader`).
 - README gains Documentation, Contributing, Acknowledgements, Authors, and
   License sections.
+- Documentation: a "Searching the catalogue" guide covering the shared
+  query model over STAC/OData (collection/bbox/datetime/filters/sort/limit),
+  filter operators and cross-backend aliases, the per-backend collection-id
+  split, `SearchResult` laziness, and the raw-query escape hatches — on both
+  `client.search()` and `eo search`.
 
 ### Changed
 

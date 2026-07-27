@@ -17,6 +17,7 @@ theme:
 nav:
   - Home: index.md
   - Quickstart: quickstart.md
+  - Searching the catalogue: searching.md
   - Configuration: configuration.md
   - CLI reference: cli.md
   - Errors: errors.md

@@ -264,3 +264,35 @@ uv run pytest tests/smoke/
 
 Attention: some smoke tests create S3 credentials (with teardown); don't run them
 frequently, as S3 credentials are not meant to be temporary.
+
+## Documentation
+
+- **[docs/](docs/)** — user guide built with [MkDocs](https://www.mkdocs.org/):
+  [quickstart](docs/quickstart.md), [configuration](docs/configuration.md),
+  [CLI reference](docs/cli.md), [errors](docs/errors.md), and the
+  [Python API reference](docs/reference.md). Build and preview locally with
+  `uv run mkdocs serve`.
+- **[CHANGELOG.md](CHANGELOG.md)** — notable changes per release, following
+  [Keep a Changelog](https://keepachangelog.com/); the project uses
+  [Semantic Versioning](https://semver.org/).
+
+## Acknowledgements
+
+eosdk stands on a small set of excellent open-source libraries —
+[httpx](https://www.python-httpx.org/) for HTTP,
+[boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html) for S3,
+[pydantic](https://docs.pydantic.dev/) for typed models,
+[typer](https://typer.tiangolo.com/) and [rich](https://rich.readthedocs.io/) for the
+CLI, and [tenacity](https://tenacity.readthedocs.io/) for retries — and interoperates
+with the wider [STAC](https://stacspec.org/) and OData ecosystems. Thank you to their
+maintainers.
+
+## Authors
+
+eosdk is developed and maintained by
+**[CloudFerro](https://cloudferro.com/)**.
+
+## License
+
+eosdk is licensed under the **Apache License, Version 2.0**. See the
+[LICENSE](LICENSE) file for the full text.

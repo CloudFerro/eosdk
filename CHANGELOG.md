@@ -30,6 +30,8 @@ explicitly.
 - `ODataCatalogue` is now exported from `eosdk.catalogue`, and `S3KeysProvider`
   /`S3Credentials` from `eosdk.auth` (matching `StacCatalogue` and
   `S3Downloader`).
+- README gains Documentation, Contributing, Acknowledgements, Authors, and
+  License sections.
 
 ### Changed
 

@@ -96,6 +96,12 @@ explicitly.
   still required only to overwrite a user-owned profile that happens to share
   the name; pass `--name` to keep a hand-tuned profile separate from the
   auto-managed one.
+- `eo auth login` (device flow): a failed device-authorization request now
+  surfaces the server's own `error`/`error_description` instead of a bare
+  `HTTP <code>`. When the realm advertises the device endpoint but the client
+  has the grant disabled (Keycloak `unauthorized_client` — e.g. CDSE's public
+  client), the error points at `eo auth login --username <you>`, the working
+  fallback, rather than leaving a dead-end `HTTP 400`.
 
 ## [0.4.0] - 2026-07-15
 

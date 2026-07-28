@@ -307,8 +307,16 @@ class TestDeviceFlow:
         self, auth: KeycloakAuth, mock_oidc: respx.Router
     ) -> None:
         mock_oidc.post(DEVICE_URL).mock(return_value=httpx.Response(500))
-        with pytest.raises(AuthError, match="device authorization failed with HTTP 500"):
+        with pytest.raises(AuthError, match="device authorization failed: HTTP 500"):
             auth.login_device(lambda info: None)
+
+    def test_device_authorization_disabled_for_client(
+        self, auth: KeycloakAuth, mock_oidc: respx.Router
+    ) -> None:
+        mock_oidc.post(DEVICE_URL).mock(return_value=oauth_error("unauthorized_client"))
+        with pytest.raises(AuthError, match="--username") as exc:
+            auth.login_device(lambda info: None)
+        assert exc.value.code == "unauthorized_client"
 
     def test_timeout(self, auth: KeycloakAuth, clock: Clock, mock_oidc: respx.Router) -> None:
         mock_oidc.post(DEVICE_URL).mock(return_value=self.device_grant())

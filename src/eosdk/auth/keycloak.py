@@ -258,10 +258,27 @@ class KeycloakAuth:
             "POST", device_endpoint, service="keycloak", data={"client_id": self._client_id}
         )
         if response.status_code != 200:
+            try:
+                payload = response.json() if response.content else {}
+            except ValueError:
+                payload = {}
+            error = payload.get("error")
+            code = error if isinstance(error, str) else None
+            description = payload.get("error_description", "")
+            detail = f"{code or f'HTTP {response.status_code}'} {description}".strip()
+            # Keycloak returns 400 unauthorized_client when the realm advertises the
+            # device endpoint but this client has the grant disabled (e.g. CDSE's
+            # public client). The password grant is the working fallback there.
+            hint = (
+                " — retry with `eo auth login --username <you>`"
+                if code == "unauthorized_client"
+                else ""
+            )
             raise AuthError(
-                f"device authorization failed with HTTP {response.status_code}",
+                f"device authorization failed: {detail}{hint}",
                 realm=self.realm,
                 profile=self.profile,
+                code=code,
             )
         grant = response.json()
         on_prompt(

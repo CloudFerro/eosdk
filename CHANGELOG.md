@@ -37,6 +37,11 @@ explicitly.
   filter operators and cross-backend aliases, the per-backend collection-id
   split, `SearchResult` laziness, and the raw-query escape hatches — on both
   `client.search()` and `eo search`.
+- Documentation: an "Authorization" guide covering the Keycloak/JWT model,
+  anonymous access to public services, device-flow and username/password
+  login (`eo auth login` ↔ `client.auth`), transparent token refresh and the
+  per-profile on-disk session cache, `eo auth status`/`logout`, and how the
+  separate S3-backend key pairs relate.
 
 ### Changed
 

@@ -19,6 +19,7 @@ nav:
   - Quickstart: quickstart.md
   - Searching the catalogue: searching.md
   - Configuration: configuration.md
+  - Authorization: authorization.md
   - CLI reference: cli.md
   - Errors: errors.md
   - API reference: reference.md

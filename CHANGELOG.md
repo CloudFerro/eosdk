@@ -42,6 +42,21 @@ explicitly.
   login (`eo auth login` ↔ `client.auth`), transparent token refresh and the
   per-profile on-disk session cache, `eo auth status`/`logout`, and how the
   separate S3-backend key pairs relate.
+- `schemas/cli/` now holds a committed JSON Schema per machine-readable command
+  (`search`, `get`, `list`, `collections`, `queryables`, `keys`, `doctor`,
+  `discover`), so `--json` / `--format json` output is a versioned contract:
+  the required field set is pinned and unknown fields are tolerated on read.
+- End-to-end test suite (`tests/e2e/`, marker `e2e`): 244 hermetic journeys over
+  a `FakePlatform` harness that projects one product set into STAC, OData,
+  `Nodes` and S3, so the protocol (`stac`/`odata`), backend (`http`/`s3`) and
+  CLI-vs-library surfaces are checked for agreement rather than only for
+  working. Covers discovery bootstrap, resilience (retry, refresh, mixed-batch,
+  resume across a process boundary), cache reuse between runs, the `--json`
+  schemas, out-of-process `eo` pipes and exit codes, and runs `examples/` so
+  they cannot rot. No network or credentials; runs in the default CI job.
+- Live smoke suite is tiered `smoke` / `smoke_auth` / `slow` and runs nightly,
+  with server-side key pairs tracked in a registry and revoked in teardown, and
+  a run-summary artifact for triage.
 
 ### Changed
 

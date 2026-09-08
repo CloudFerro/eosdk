@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gitlab.cloudferro.com/data-access/eosdk/-/raw/master/schemas/cli/get.schema.json",
+  "title": "eo get --json — one product",
+  "description": "Emitted by `eo get <id> --json` (src/eosdk/cli/commands/get.py) as a single JSON object. Same Product.model_dump_json() projection as one line of `eo search --format json`; the two are held identical by tests/e2e/test_json_contracts.py so a product obtained either way is interchangeable. Hand-written on purpose: it is a contract, not a projection of the model. `additionalProperties` is true — downstream consumers must tolerate fields added later.",
+  "type": "object",
+  "required": ["id", "name"],
+  "additionalProperties": true,
+  "properties": {
+    "id": {
+      "description": "Backend-native product identifier; the reference `eo download`/`eo get`/`eo list --via http` accept.",
+      "type": "string",
+      "minLength": 1
+    },
+    "name": {
+      "description": "Product name as the catalogue advertises it (the download filename stem).",
+      "type": "string",
+      "minLength": 1
+    },
+    "collection": {
+      "description": "Collection the product belongs to; null when the backend does not say.",
+      "type": ["string", "null"]
+    },
+    "size": {
+      "description": "Size of the downloadable payload in bytes; null when unknown.",
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "geometry": {
+      "description": "GeoJSON geometry of the product footprint; null when the backend does not say.",
+      "type": ["object", "null"]
+    },
+    "datetime": {
+      "description": "Acquisition instant, RFC 3339. Serialized by pydantic from a timezone-aware datetime.",
+      "type": ["string", "null"],
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T"
+    },
+    "cloud_cover": {
+      "description": "Cloud cover in percent, where the collection carries it.",
+      "type": ["number", "null"]
+    },
+    "checksum": { "$ref": "#/$defs/checksum" },
+    "s3_path": {
+      "description": "Address of the product root in object storage, in either vocabulary the S3 backend accepts: an `s3://bucket/key` URI (STAC) or an absolute `/bucket/key` path (OData). Null when the catalogue advertises no S3 location; `eo ... --via s3` then cannot address the product.",
+      "type": ["string", "null"],
+      "pattern": "^(s3://|/)"
+    },
+    "raw": {
+      "description": "The untouched backend document the product was normalized from (a STAC item or an OData entry). Structure is backend-specific by design and deliberately unconstrained here.",
+      "type": "object"
+    }
+  },
+  "$defs": {
+    "checksum": {
+      "description": "Catalogue-advertised checksum of the downloadable payload; null when the backend advertises none, in which case `--checksum` cannot verify anything.",
+      "type": ["object", "null"],
+      "required": ["algorithm", "value"],
+      "additionalProperties": true,
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "enum": ["md5", "sha1", "sha256", "sha3-256"]
+        },
+        "value": {
+          "description": "Lower-case hex digest (normalized by the model).",
+          "type": "string",
+          "pattern": "^[0-9a-f]+$"
+        }
+      }
+    }
+  }
+}

@@ -78,6 +78,10 @@ test:
   extends: .uv
   stage: test
   image: "$UV_IMAGE:python$EO_PYTHON-bookworm-slim"
+  # .python-version pins the dev interpreter; without UV_PYTHON uv would
+  # download that one and ignore the image's Python.
+  variables:
+    UV_PYTHON: $EO_PYTHON
   rules:
     - if: $CI_PIPELINE_SOURCE != "schedule"
   parallel:

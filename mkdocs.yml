@@ -1,6 +1,6 @@
 site_name: eosdk
 site_description: Python SDK and CLI for Earth Observation services
-repo_url: https://github.com/cloudferro/eosdk # TODO: confirm hosting (SPEC §14.8)
+repo_url: https://github.com/cloudferro/eosdk
 theme:
   name: material
   features:

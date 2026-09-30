@@ -298,7 +298,7 @@ to the SDK. Resolution order for the discovery URL itself:
   "platform":     { "name": "example-eu",
                     "description": "Example Earth-observation data platform (example.eu)" },
   "services": {
-    "catalogue":    { "stac": { "url": "https://catalogue.example.eu/stac" },
+    "catalogue":    { "stac": { "url": "https://stac.example.eu/v1" },
                       "odata": { "url": "https://catalogue.example.eu/odata",
                                  "api_version": "v1" } },
     "data_access":  { "http": { "odata": { "url": "https://download.example.eu/odata",
@@ -318,6 +318,13 @@ to the SDK. Resolution order for the discovery URL itself:
   }
 }
 ```
+
+`catalogue.stac.url` is the STAC API landing page itself, not a version-free
+base: the SDK uses it verbatim and reads everything else from it (see
+per-service discovery below). A `/v1` there — as in the example, and on CDSE —
+is part of the deployment's path, not an SDK-owned version, so `stac` carries
+no `api_version`; STAC API compatibility is checked through the landing page's
+`conformsTo` instead (§6.3).
 
 Data access is described by one `data_access` service split by transport
 protocol: `http` (whole-object downloads over HTTP) and `s3` (object storage).

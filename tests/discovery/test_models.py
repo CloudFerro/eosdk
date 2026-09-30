@@ -99,7 +99,8 @@ class TestDeriveUrl:
 class TestProjection:
     def test_spec_example_projection(self) -> None:
         projected = project_endpoints(parse_document(spec_document()))
-        assert projected["catalogue_stac"] == "https://catalogue.example.eu/stac"
+        # the STAC landing page is used verbatim: its /v1 is kept, not stripped
+        assert projected["catalogue_stac"] == "https://stac.example.eu/v1"
         assert projected["catalogue_odata"] == "https://catalogue.example.eu/odata"
         assert projected["s3_endpoint"] == "https://s3.example.eu"
         assert projected["s3_region"] == "default"

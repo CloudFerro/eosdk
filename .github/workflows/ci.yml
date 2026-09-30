@@ -34,12 +34,16 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
         python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    # UV_PYTHON, not `uv sync --python`: .python-version pins the dev
+    # interpreter, and a plain `uv run` would rebuild .venv on that pin.
+    env:
+      UV_PYTHON: ${{ matrix.python }}
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
-      - run: uv sync --group dev --python ${{ matrix.python }}
+      - run: uv sync --group dev
       - run: uv run pytest --cov=eosdk --cov-report=term
         if: runner.os != 'Windows'
       # tests/e2e/test_cli_shell.py spawns the `eo` console script against a

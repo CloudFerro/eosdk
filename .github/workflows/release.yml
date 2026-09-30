@@ -10,10 +10,14 @@ jobs:
     strategy:
       matrix:
         python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    # UV_PYTHON, not `uv sync --python`: .python-version pins the dev
+    # interpreter, and a plain `uv run` would rebuild .venv on that pin.
+    env:
+      UV_PYTHON: ${{ matrix.python }}
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0
-      - run: uv sync --group dev --python ${{ matrix.python }}
+      - run: uv sync --group dev
       - run: uv run ruff check .
       - run: uv run mypy
       - run: uv run pytest

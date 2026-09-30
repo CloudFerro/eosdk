@@ -178,7 +178,7 @@ class TestTheAcceptanceScript:
 
         reports = library_client.download(product, target=tmp_path / "f4", via="s3")
         delivered = {
-            str(path.relative_to(reports[0].path)): path.read_bytes()
+            path.relative_to(reports[0].path).as_posix(): path.read_bytes()
             for path in reports[0].path.rglob("*")
             if path.is_file()
         }

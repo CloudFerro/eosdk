@@ -284,6 +284,9 @@ def cli_surface() -> dict[str, dict[str, bool]]:
 class TestShellExamplesMatchTheCli:
     """The scripts are documentation; the CLI is the contract they document."""
 
+    # A bare "bash" on Windows resolves to System32's WSL launcher before any Git
+    # Bash on PATH, and the syntax check is OS-independent: Linux covers it.
+    @pytest.mark.skipif(os.name == "nt", reason="no reliable bash on Windows")
     @pytest.mark.parametrize("script", SHELL_EXAMPLES, ids=lambda p: p.stem)
     def test_script_is_valid_bash(self, script: Path) -> None:
         result = subprocess.run(

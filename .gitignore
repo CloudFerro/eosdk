@@ -27,3 +27,10 @@ eosdk.toml
 
 # Docs
 site/
+
+# Test / smoke artifacts (downloaded EOData, live-run reports)
+data/
+smoke-summary.json
+
+# Agent tooling (machine-local)
+.claude/

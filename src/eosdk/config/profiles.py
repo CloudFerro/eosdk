@@ -1,6 +1,6 @@
 """Profile CRUD for the config file.
 
-Writes go through tomlkit so comments and layout round-trip (SPEC §10), are
+Writes go through tomlkit so comments and layout round-trip, are
 validated *before* touching the file, and land atomically (tmp + rename).
 """
 
@@ -62,7 +62,7 @@ def _validate_field(fieldname: str, value: str) -> str:
 
 
 def set_value(path: Path, dotted_key: str, value: str) -> None:
-    """Set ``profiles.<name>.<field>`` or ``default_profile`` (SPEC §7.4).
+    """Set ``profiles.<name>.<field>`` or ``default_profile``.
 
     Paths are deliberately constrained to those two shapes (plan risk R10).
     """
@@ -102,7 +102,7 @@ def save_discovered_profile(
     values: dict[str, str],
     discovered_from: str,
 ) -> str:
-    """Persist a discovery snapshot as ``profiles.<name>`` (SPEC §6.2).
+    """Persist a discovery snapshot as ``profiles.<name>``.
 
     Returns ``"created"``, ``"updated"``, ``"unchanged"`` or ``"conflict"``.
     A same-named profile carrying ``discovered_from`` is a managed mirror and

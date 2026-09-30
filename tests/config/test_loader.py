@@ -68,7 +68,9 @@ class TestPrecedenceMatrix:
         assert cfg.endpoints.eodata_http == LOCAL_URL
         assert cfg.sources["eodata_http"].source == f"profile:dev({local_toml})"
 
-    def test_user_file_beats_default(self, tmp_path: Path, user_toml: Path) -> None:
+    def test_user_file_used_when_nothing_more_specific(
+        self, tmp_path: Path, user_toml: Path
+    ) -> None:
         cfg = load(env={}, cwd=tmp_path, user_config=user_toml)
         assert cfg.endpoints.eodata_http == USER_URL
         assert cfg.sources["eodata_http"].source == f"profile:dev({user_toml})"
@@ -82,10 +84,16 @@ class TestPrecedenceMatrix:
         )
         assert cfg.endpoints.eodata_http == KW_URL
 
-    def test_unpinned_field_falls_to_default(self, tmp_path: Path, missing: Path) -> None:
+    def test_unpinned_field_falls_to_model_default(self, tmp_path: Path, missing: Path) -> None:
+        # No built-in deployment defaults exist: only generic model defaults
+        # (s3_region) resolve; everything else is unset until configured.
         cfg = load(env={}, cwd=tmp_path, user_config=missing)
-        assert cfg.endpoints.keycloak_realm == "CDSE"
-        assert cfg.sources["keycloak_realm"].source == "default"
+        assert cfg.endpoints.s3_region == "default"
+        assert cfg.sources["s3_region"].source == "default"
+        assert cfg.endpoints.keycloak_realm is None
+        assert cfg.sources["keycloak_realm"].source == "unset"
+        assert cfg.endpoints.catalogue_stac is None
+        assert cfg.sources["catalogue_stac"].source == "unset"
 
 
 class TestProfileSelection:
@@ -140,6 +148,18 @@ class TestDiscoveryPending:
         cfg = load(platform="https://p.example.eu", env={}, cwd=tmp_path, user_config=missing)
         assert cfg.platform == "https://p.example.eu"
         assert cfg.resolved()["eodata_http"].source == "discovery"
+
+    def test_discovery_url_derived_from_platform(self, tmp_path: Path, missing: Path) -> None:
+        # discovery_url is a location, not a discovered service: derivable, never pending
+        cfg = load(platform="https://p.example.eu", env={}, cwd=tmp_path, user_config=missing)
+        resolved = cfg.resolved()["discovery_url"]
+        assert resolved.source == "derived"
+        assert resolved.value == "https://p.example.eu/.well-known/eo-services.json"
+        assert resolved.display != PENDING
+
+    def test_discovery_url_unset_without_platform(self, tmp_path: Path, missing: Path) -> None:
+        cfg = load(env={}, cwd=tmp_path, user_config=missing)
+        assert cfg.resolved()["discovery_url"].source == "unset"
 
     def test_require_pending_raises_with_pin_hint(self, tmp_path: Path, missing: Path) -> None:
         cfg = load(platform="https://p.example.eu", env={}, cwd=tmp_path, user_config=missing)

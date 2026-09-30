@@ -1,4 +1,4 @@
-"""Shared HTTP transport (SPEC §6.7).
+"""Shared HTTP transport.
 
 One ``httpx`` client behind a thin wrapper adding the shared retry/backoff
 policy, quota handling, User-Agent, and the :func:`route` URL builder — the
@@ -23,7 +23,7 @@ from urllib.parse import quote
 import httpx
 
 from eosdk import __version__
-from eosdk.exceptions import EndpointUnreachable, QuotaExceeded
+from eosdk.exceptions import EndpointUnreachable, QuotaExceeded, ServiceTimeout
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -55,7 +55,7 @@ def odata_key(value: str) -> str:
     """Quote a string as an OData key literal: ``'...'`` with ``'`` doubled.
 
     Required for ``Nodes({name})`` segments whose names may contain spaces,
-    parentheses, or quotes (SPEC §6.6) — never assemble these with f-strings.
+    parentheses, or quotes — never assemble these with f-strings.
     """
     return "'" + value.replace("'", "''") + "'"
 
@@ -176,7 +176,7 @@ class Transport:
                 response = self._client.send(
                     request, auth=auth or httpx.USE_CLIENT_DEFAULT, stream=stream
                 )
-            except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as exc:
+            except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
                 if retryable_method and attempt < policy.attempts:
                     self.sleep(policy.backoff(attempt))
                     continue
@@ -184,6 +184,18 @@ class Transport:
                     service=service,
                     url=url,
                     hint="check the endpoint URL for this service in your profile or EOSDK_* env",
+                ) from exc
+            except (httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout) as exc:
+                # the connection was established; the server just never answered
+                # in time — a bad URL is not the cause, so don't point there.
+                if retryable_method and attempt < policy.attempts:
+                    self.sleep(policy.backoff(attempt))
+                    continue
+                deadline = kwargs.get("timeout", self.timeout)
+                raise ServiceTimeout(
+                    service=service,
+                    url=url,
+                    timeout=deadline if isinstance(deadline, (int, float)) else None,
                 ) from exc
 
             # taxonomy mapping (429 -> QuotaExceeded below) applies to every

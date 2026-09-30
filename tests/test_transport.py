@@ -3,7 +3,7 @@ import pytest
 import respx
 
 from eosdk import __version__
-from eosdk.exceptions import EndpointUnreachable, QuotaExceeded
+from eosdk.exceptions import EndpointUnreachable, QuotaExceeded, ServiceTimeout
 from eosdk.transport import RetryPolicy, Transport, odata_key, route, user_agent
 
 BASE = "https://svc.example.eu"
@@ -139,6 +139,34 @@ def test_connect_error_maps_to_endpoint_unreachable() -> None:
     assert "keycloak" in msg
     assert f"{BASE}/x" in msg
     assert "EOSDK_" in msg
+
+
+@respx.mock
+def test_read_timeout_maps_to_service_timeout_not_bad_url() -> None:
+    # The connection succeeded and the server never answered: a read timeout is
+    # not a "check your URL" situation, so it must not read as EndpointUnreachable.
+    respx.post(f"{BASE}/search").mock(side_effect=httpx.ReadTimeout("timed out"))
+    t = Transport(timeout=12.0, sleep=lambda _s: None)
+    with pytest.raises(ServiceTimeout) as exc_info:
+        t.request("POST", f"{BASE}/search", service="catalogue_stac")
+    err = exc_info.value
+    assert isinstance(err, EndpointUnreachable)  # still caught by existing handlers
+    msg = str(err)
+    assert "catalogue_stac" in msg
+    assert f"{BASE}/search" in msg
+    assert "unreachable" not in msg  # the misleading wording is gone
+    assert "12s" in msg
+    assert err.timeout == 12.0
+    t.close()
+
+
+@respx.mock
+def test_read_timeout_on_get_is_retried_then_times_out() -> None:
+    mock = respx.get(f"{BASE}/x").mock(side_effect=httpx.ReadTimeout("timed out"))
+    t = make_transport()
+    with pytest.raises(ServiceTimeout):
+        t.request("GET", f"{BASE}/x", service="svc")
+    assert mock.call_count == t.retry.attempts  # idempotent reads still retry
 
 
 @respx.mock

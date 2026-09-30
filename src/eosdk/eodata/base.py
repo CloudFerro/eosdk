@@ -1,4 +1,4 @@
-"""Downloader protocol and the transfer machinery shared by all backends (SPEC §6.6).
+"""Downloader protocol and the transfer machinery shared by all backends.
 
 Retries, checksum verification, progress events, and bounded concurrency are
 implemented once here; backends provide ``_open_stream`` and declare whether
@@ -74,7 +74,7 @@ class Downloader(Protocol):
 
 
 class Listable(Protocol):
-    """Optional `list` capability: a product's internal file tree (SPEC §6.6)."""
+    """Optional `list` capability: a product's internal file tree."""
 
     def list(self, product: Product, path: str = "", *, recursive: bool = False) -> list[Node]: ...
 

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gitlab.cloudferro.com/data-access/eosdk/-/raw/master/schemas/cli/doctor.schema.json",
+  "title": "eo doctor --json — health check report",
+  "description": "Emitted by `eo doctor --json` (src/eosdk/cli/commands/doctor.py) as a JSON ARRAY of sections, in the order src/eosdk/doctor.py::run_doctor produces them (Config, Discovery, Auth, Services). The exit code is 1 when ANY result has `ok: false`, and 0 otherwise — a skipped check (`ok: null`) is not a failure, which is what lets `eo doctor` be used as a pipeline gate on a machine with no session (SPEC §6.8). Section and check names are human-facing labels and deliberately not enumerated here: new checks must not break a consumer. Hand-written on purpose: it is a contract, not a projection. `additionalProperties` is true throughout.",
+  "type": "array",
+  "items": { "$ref": "#/$defs/section" },
+  "$defs": {
+    "section": {
+      "description": "One group of checks.",
+      "type": "object",
+      "required": ["section", "results"],
+      "additionalProperties": true,
+      "properties": {
+        "section": {
+          "description": "Section label, e.g. `Config`, `Discovery`, `Auth`, `Services`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "results": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/result" }
+        }
+      }
+    },
+    "result": {
+      "description": "One check.",
+      "type": "object",
+      "required": ["name", "ok", "detail"],
+      "additionalProperties": true,
+      "properties": {
+        "name": {
+          "description": "What was checked, e.g. `catalogue_stac URL`, `session`, `EOData (HTTP)`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "ok": {
+          "description": "true = passed, false = failed (drives the exit code), null = skipped because the subsystem is not configured or needs a session. A consumer that treats null as failure will report false alarms on anonymous machines.",
+          "type": ["boolean", "null"]
+        },
+        "detail": {
+          "description": "What was observed, always present — the resolved value and its source for config checks, the error message for failures.",
+          "type": "string"
+        },
+        "hint": {
+          "description": "The remediation for a failed check; null when there is nothing actionable to add or the check did not fail.",
+          "type": ["string", "null"]
+        }
+      }
+    }
+  }
+}

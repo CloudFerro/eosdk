@@ -1,8 +1,14 @@
 import json
 from pathlib import Path
 
+import httpx
+import respx
+
 from eosdk.config.loader import load
 from tests.cli.conftest import Invoke
+from tests.discovery.test_models import spec_document
+
+WELL_KNOWN = "https://platform.example.eu/.well-known/eo-services.json"
 
 COMMENTED_TOML = """\
 # eosdk configuration — do not remove this comment
@@ -86,36 +92,80 @@ class TestUseAndProfiles:
 
 
 class TestInit:
-    def test_init_platform_profile_loadable(self, invoke_bare: Invoke, tmp_path: Path) -> None:
-        result = invoke_bare(
-            "config",
-            "init",
-            "--name",
-            "prod",
-            "--platform",
-            "https://platform.example.eu",
-        )
+    @respx.mock
+    def test_init_platform_resolves_and_pins(self, invoke_bare: Invoke, tmp_path: Path) -> None:
+        respx.get(WELL_KNOWN).mock(return_value=httpx.Response(200, json=spec_document()))
+        result = invoke_bare("config", "init", "--platform", "https://platform.example.eu")
         assert result.exit_code == 0, result.output
         config = tmp_path / "empty" / "config.toml"
         # loop closure: the file `eo config init` writes is consumable by load()
         resolved = load(env={}, cwd=tmp_path / "empty", user_config=config)
-        assert resolved.profile == "prod"
+        # name comes from the document's platform block (SPEC §6.2), not a prompt
+        assert resolved.profile == "example-eu"
         assert resolved.platform == "https://platform.example.eu"
+        # endpoints are pinned at init time — no more <pending>
+        assert resolved.endpoints.catalogue_stac is not None
+        assert resolved.sources["catalogue_stac"].source.startswith("profile:example-eu")
+        # discovery_url is derived from the platform, not left pending
+        assert resolved.sources["discovery_url"].source == "derived"
+        assert resolved.endpoints.discovery_url == (
+            "https://platform.example.eu/.well-known/eo-services.json"
+        )
+        # the success message points the user at the next verification step
+        assert "eo doctor" in result.output
 
-    def test_init_refuses_clobber_without_force(self, invoke: Invoke) -> None:
-        result = invoke("config", "init", "--name", "test", "--platform", "https://p.example.eu")
-        assert result.exit_code == 1
-        assert "--force" in result.output
-
-    def test_init_prompts_for_platform_url(self, invoke_bare: Invoke, tmp_path: Path) -> None:
-        # no --platform: confirm the single-root question, then type the URL
+    @respx.mock
+    def test_init_name_overrides_platform_name(self, invoke_bare: Invoke, tmp_path: Path) -> None:
+        respx.get(WELL_KNOWN).mock(return_value=httpx.Response(200, json=spec_document()))
         result = invoke_bare(
-            "config", "init", "--name", "prod", input="y\nhttps://platform.example.eu\n"
+            "config", "init", "--name", "prod", "--platform", "https://platform.example.eu"
         )
         assert result.exit_code == 0, result.output
         config = tmp_path / "empty" / "config.toml"
         resolved = load(env={}, cwd=tmp_path / "empty", user_config=config)
         assert resolved.profile == "prod"
+        assert resolved.endpoints.catalogue_stac is not None
+
+    @respx.mock
+    def test_init_reinit_resyncs_managed_profile_without_force(
+        self, invoke_bare: Invoke, tmp_path: Path
+    ) -> None:
+        respx.get(WELL_KNOWN).mock(return_value=httpx.Response(200, json=spec_document()))
+        first = invoke_bare("config", "init", "--platform", "https://platform.example.eu")
+        assert first.exit_code == 0, first.output
+        # re-running init on a discovery-managed profile resyncs it, no --force
+        second = invoke_bare("config", "init", "--platform", "https://platform.example.eu")
+        assert second.exit_code == 0, second.output
+        config = tmp_path / "empty" / "config.toml"
+        resolved = load(env={}, cwd=tmp_path / "empty", user_config=config)
+        assert resolved.profile == "example-eu"
+
+    def test_init_unreachable_platform_hard_fails(
+        self, invoke_bare: Invoke, tmp_path: Path
+    ) -> None:
+        # discovery is not mocked: the fetch fails and no profile is written
+        result = invoke_bare("config", "init", "--platform", "https://platform.example.eu")
+        assert result.exit_code == 1
+        assert not (tmp_path / "empty" / "config.toml").exists()
+
+    @respx.mock
+    def test_init_refuses_clobber_without_force(self, invoke: Invoke) -> None:
+        respx.get(WELL_KNOWN).mock(return_value=httpx.Response(200, json=spec_document()))
+        result = invoke(
+            "config", "init", "--name", "test", "--platform", "https://platform.example.eu"
+        )
+        assert result.exit_code == 1
+        assert "--force" in result.output
+
+    @respx.mock
+    def test_init_prompts_for_platform_url(self, invoke_bare: Invoke, tmp_path: Path) -> None:
+        # no --platform: confirm the single-root question, then type the URL
+        respx.get(WELL_KNOWN).mock(return_value=httpx.Response(200, json=spec_document()))
+        result = invoke_bare("config", "init", input="y\nhttps://platform.example.eu\n")
+        assert result.exit_code == 0, result.output
+        config = tmp_path / "empty" / "config.toml"
+        resolved = load(env={}, cwd=tmp_path / "empty", user_config=config)
+        assert resolved.profile == "example-eu"
         assert resolved.platform == "https://platform.example.eu"
 
     def test_init_manual_endpoint_entry(self, invoke_bare: Invoke, tmp_path: Path) -> None:

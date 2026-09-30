@@ -1,4 +1,4 @@
-"""API version guard (SPEC §6.3).
+"""API version guard.
 
 Each version-aware module pins the versions it implements; the guard compares
 them with what discovery advertises and fails early — at first use, never
@@ -26,7 +26,7 @@ _PIN_HINTS = {
 
 
 def select_version(service_key: str, advertised: str | None) -> str:
-    """Pick the route-template version for a service (SPEC §6.3).
+    """Pick the route-template version for a service.
 
     ``advertised=None`` (no discovery, or the field omitted) falls back to the
     module's default supported version — also the pre-discovery path.

@@ -1,4 +1,4 @@
-"""Exception taxonomy for eosdk (SPEC §8).
+"""Exception taxonomy for eosdk.
 
 Every exception inherits :class:`EosdkError` and carries structured attributes;
 messages always name the failing service and, where possible, the config knob
@@ -34,10 +34,12 @@ class AuthError(EosdkError):
         realm: str | None = None,
         profile: str | None = None,
         code: str | None = None,
+        status_code: int | None = None,
     ) -> None:
         self.realm = realm
         self.profile = profile
         self.code = code
+        self.status_code = status_code
         parts = [message]
         if realm is not None:
             parts.append(f"realm={realm!r}")
@@ -47,7 +49,15 @@ class AuthError(EosdkError):
 
 
 class EndpointUnreachable(EosdkError):
-    """Connect/timeout failure on first use of a service or during doctor checks."""
+    """No connection could be established to a service (refused/DNS/connect timeout).
+
+    Raised on first use of a service or during doctor checks. A *read* timeout —
+    the connection succeeded but the server never answered — is the distinct
+    :class:`ServiceTimeout` subclass, so ``except EndpointUnreachable`` still
+    catches both while the message stays accurate.
+    """
+
+    _summary = "{service} is unreachable at {url}"
 
     def __init__(
         self,
@@ -59,10 +69,39 @@ class EndpointUnreachable(EosdkError):
         self.service = service
         self.url = url
         self.hint = hint
-        message = f"{service} is unreachable at {url}"
+        message = self._summary.format(service=service, url=url)
         if hint is not None:
             message = f"{message} ({hint})"
         super().__init__(message)
+
+
+class ServiceTimeout(EndpointUnreachable):
+    """The service was reached but did not respond within the client timeout.
+
+    Distinct from :class:`EndpointUnreachable`: the URL is correct and the host
+    accepted the connection, so the fix is to retry or raise the timeout, not to
+    edit the endpoint config. ``timeout`` is the effective per-request deadline.
+    """
+
+    _summary = "{service} did not respond in time at {url}"
+
+    def __init__(
+        self,
+        *,
+        service: str,
+        url: str,
+        timeout: float | None = None,
+        hint: str | None = None,
+    ) -> None:
+        self.timeout = timeout
+        if timeout is not None:
+            self._summary = f"{{service}} did not respond within {timeout:g}s at {{url}}"
+        if hint is None:
+            hint = (
+                "the endpoint is reachable but slow or unresponsive — retry shortly, "
+                "or raise the client timeout (Client(timeout=...))"
+            )
+        super().__init__(service=service, url=url, hint=hint)
 
 
 class UnsupportedApiVersion(EosdkError):
@@ -191,6 +230,28 @@ class S3KeyLimitReached(EosdkError):
         super().__init__(
             f"{message} — revoke an unused key (`eo keys list`, `eo keys revoke <access_id>`) "
             "or reuse an existing labeled key (`get_or_create(label=...)`)"
+        )
+
+
+class S3KeyNotActive(EosdkError):
+    """A freshly created S3 key was not accepted by the S3 endpoint in time.
+
+    Key pairs propagate from the credentials service to the S3 gateway
+    asynchronously; normally that takes seconds. A key the gateway never
+    accepts usually means the account holds too many keys — the credentials
+    service lists it, but the gateway never provisioned it.
+    """
+
+    def __init__(self, *, access_key: str, waited: float, code: str) -> None:
+        self.access_key = access_key
+        self.waited = waited
+        self.code = code
+        super().__init__(
+            f"the S3 endpoint did not accept freshly created key {access_key!r} "
+            f"within {waited:.0f}s ({code}) — propagation normally takes seconds; "
+            "a key that never activates usually means the account holds too many "
+            "keys — revoke unused ones (`eo keys list`, `eo keys revoke <access_id>`) "
+            "and retry"
         )
 
 

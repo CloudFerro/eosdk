@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gitlab.cloudferro.com/data-access/eosdk/-/raw/master/schemas/cli/list.schema.json",
+  "title": "eo list --json — a product's internal nodes",
+  "description": "Emitted by `eo list <ref> [path] --json` (src/eosdk/cli/commands/listing.py) as a JSON ARRAY of nodes, one per entry of the product's internal tree at the requested path (SPEC §6.6). Each element is Node.model_dump(mode=\"json\") (src/eosdk/models.py::Node). The same array shape is produced by every backend (`--via http` and `--via s3`) and by `--recursive`; only the number of entries differs. Hand-written on purpose: it is a contract, not a projection of the model. `additionalProperties` is true on the node object — downstream consumers must tolerate fields added later.",
+  "type": "array",
+  "items": { "$ref": "#/$defs/node" },
+  "$defs": {
+    "node": {
+      "description": "One file or directory inside a product.",
+      "type": "object",
+      "required": ["name", "path", "is_dir"],
+      "additionalProperties": true,
+      "properties": {
+        "name": {
+          "description": "Entry name, without any parent path.",
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "description": "Logical, backend-agnostic path relative to the product root; each backend translates it to its own addressing. Never absolute and never prefixed with the product name.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^/]"
+        },
+        "is_dir": {
+          "description": "True for directories. Directories carry no size and are never downloadable targets.",
+          "type": "boolean"
+        },
+        "size": {
+          "description": "Size in bytes for files; null for directories and where the backend does not report one.",
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "checksum": {
+          "description": "Per-node checksum where the backend advertises one; null otherwise.",
+          "type": ["object", "null"],
+          "required": ["algorithm", "value"],
+          "additionalProperties": true,
+          "properties": {
+            "algorithm": {
+              "type": "string",
+              "enum": ["md5", "sha1", "sha256", "sha3-256"]
+            },
+            "value": {
+              "type": "string",
+              "pattern": "^[0-9a-f]+$"
+            }
+          }
+        },
+        "raw": {
+          "description": "The untouched backend document the node was normalized from (an OData Nodes entry, an S3 object listing). Backend-specific by design.",
+          "type": "object"
+        }
+      }
+    }
+  }
+}

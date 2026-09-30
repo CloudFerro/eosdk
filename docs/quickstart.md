@@ -6,6 +6,15 @@
 pip install eosdk        # or: uv add eosdk
 ```
 
+## Connect to a platform
+
+Endpoints are discovered from a platform root once and saved as a profile
+(CDSE shown; any platform publishing `/.well-known/eo-services.json` works):
+
+```bash
+eo config init --platform https://discover.dataspace.copernicus.eu
+```
+
 ## CLI in five lines
 
 ```bash

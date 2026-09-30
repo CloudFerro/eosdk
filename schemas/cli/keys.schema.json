@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gitlab.cloudferro.com/data-access/eosdk/-/raw/master/schemas/cli/keys.schema.json",
+  "title": "eo keys list --json — S3 key pairs",
+  "description": "Emitted by `eo keys list --json` (src/eosdk/cli/commands/keys.py) as a JSON ARRAY, one element per key pair the credentials service reports for the account. Secrets are NEVER present here: the service reveals a secret exactly once, at creation, and only `eo keys create --export` prints it (SPEC §6.4). The projection is built by the command, not by a model, so this schema is the only description of it. Hand-written on purpose: it is a contract, not a projection. `additionalProperties` is true — downstream consumers must tolerate fields added later.",
+  "type": "array",
+  "items": { "$ref": "#/$defs/key" },
+  "$defs": {
+    "key": {
+      "description": "One key pair, as the credentials service lists it plus what eosdk knows locally.",
+      "type": "object",
+      "required": ["access_key", "local_secret"],
+      "additionalProperties": true,
+      "properties": {
+        "access_key": {
+          "description": "Public identifier of the key pair; the argument `eo keys revoke` takes, and AWS_ACCESS_KEY_ID for aws-cli/rclone interop.",
+          "type": "string",
+          "minLength": 1
+        },
+        "organization": {
+          "description": "Owning organization as the service reports it; null when it reports none.",
+          "type": ["string", "null"]
+        },
+        "expiration_date": {
+          "description": "When the service will stop honouring this key, RFC 3339; null when the key does not expire.",
+          "type": ["string", "null"]
+        },
+        "label": {
+          "description": "Client-side label the key was created under. The credentials service has no label concept — the mapping lives in the local per-profile store (src/eosdk/auth/s3_keys.py), so a key created on another machine reads back as null even though it is the same key.",
+          "type": ["string", "null"]
+        },
+        "local_secret": {
+          "description": "Whether this machine holds the secret for this key. False means the pair is unusable for a transfer here (the secret is unrecoverable) and can only be revoked.",
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

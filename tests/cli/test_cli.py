@@ -208,6 +208,17 @@ class TestDownload:
         assert result.exit_code == 0, result.output
         assert (out_dir / "uuid-a.zip").read_bytes() == PAYLOAD
 
+    def test_resume_flag_accepted(
+        self, invoke: Invoke, platform_mocks: respx.Router, tmp_path: Path
+    ) -> None:
+        # the CLI mirrors client.download(resume=...); the flag must parse and
+        # plumb through (http restarts regardless, so the file still lands).
+        invoke("auth", "login", "--username", "alice", "--password-stdin", input="pw\n")
+        out_dir = tmp_path / "data"
+        result = invoke("download", "uuid-a", "-o", str(out_dir), "--no-resume")
+        assert result.exit_code == 0, result.output
+        assert (out_dir / "uuid-a.zip").read_bytes() == PAYLOAD
+
     def test_missing_product_exit_code(
         self, invoke: Invoke, platform_mocks: respx.Router, tmp_path: Path
     ) -> None:

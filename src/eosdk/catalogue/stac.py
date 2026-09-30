@@ -1,4 +1,4 @@
-"""Thin STAC API ItemSearch client over the shared transport (SPEC §6.5).
+"""Thin STAC API ItemSearch client over the shared transport.
 
 No pystac-client: the landing page is fetched lazily (once), conformance is
 verified, and the search endpoint is taken from the ``rel="search"`` link

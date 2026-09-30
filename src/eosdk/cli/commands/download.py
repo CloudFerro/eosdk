@@ -17,6 +17,7 @@ from rich.progress import (
     TransferSpeedColumn,
 )
 
+from eosdk.cli._refs import product_from_ref
 from eosdk.cli._state import build_client, friendly_errors, get_state, stderr, stdout
 from eosdk.models import Product
 
@@ -72,6 +73,13 @@ def download(
     ] = Path(),
     via: Annotated[str, typer.Option("--via", help="http | s3")] = "http",
     concurrency: Annotated[int, typer.Option("--concurrency", "-c")] = 4,
+    resume: Annotated[
+        bool,
+        typer.Option(
+            "--resume/--no-resume",
+            help="Resume partial files where the backend supports it (s3); http always restarts.",
+        ),
+    ] = True,
     checksum: Annotated[
         bool, typer.Option("--checksum/--no-checksum", help="Verify checksums when available.")
     ] = True,
@@ -86,21 +94,9 @@ def download(
         if ids == ["-"]:
             products = _products_from_stdin()
         else:
-            # Bare ids build minimal stubs; enough for the HTTP $value route.
-            # S3 paths (`s3://…` or `/eodata/…`, e.g. from `eo search --format s3`)
-            # carry the address the S3 backend needs instead.
-            products = []
-            for ref in ids:
-                if ref.startswith(("s3://", "/")):
-                    if via != "s3":
-                        raise typer.BadParameter(
-                            f"{ref!r} is an S3 path and only works with --via s3; "
-                            "the http route needs product ids (eo search --format id)"
-                        )
-                    name = ref.rstrip("/").rsplit("/", 1)[-1]
-                    products.append(Product(id=name, name=name, s3_path=ref))
-                else:
-                    products.append(Product(id=ref, name=ref))
+            # Bare ids build minimal stubs (enough for the HTTP $value route);
+            # S3 paths carry the address the S3 backend needs — see _refs.
+            products = [product_from_ref(ref, via) for ref in ids]
 
         show_progress = not quiet and sys.stderr.isatty()
         if not quiet:
@@ -139,6 +135,7 @@ def download(
                         target=output,
                         via=via,
                         concurrency=concurrency,
+                        resume=resume,
                         checksum=checksum,
                         progress=on_event,
                     )
@@ -148,6 +145,7 @@ def download(
                     target=output,
                     via=via,
                     concurrency=concurrency,
+                    resume=resume,
                     checksum=checksum,
                     progress=track,
                 )

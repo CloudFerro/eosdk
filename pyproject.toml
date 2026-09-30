@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "eosdk"
-version = "0.4.0"
+version = "0.5.0"
 description = "Python SDK and CLI for Earth Observation services: catalogue search, EOData download, auth"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -35,9 +35,9 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://gitlab.cloudferro.com/data-access/eosdk"
-Issues = "https://gitlab.cloudferro.com/data-access/eosdk/-/issues"
-Changelog = "https://gitlab.cloudferro.com/data-access/eosdk/-/blob/master/CHANGELOG.md"
+Repository = "https://github.com/CloudFerro/eosdk"
+Issues = "https://github.com/CloudFerro/eosdk/issues"
+Changelog = "https://github.com/CloudFerro/eosdk/blob/master/CHANGELOG.md"
 
 [project.scripts]
 eo = "eosdk.cli.main:app"
@@ -51,10 +51,15 @@ dev = [
     "pytest>=8",
     "pytest-cov>=5",
     "respx>=0.21",
-    "moto[s3]>=5",
+    # `server` powers the out-of-process CLI journeys: respx patches httpx
+    # inside this process, so a subprocess needs a real S3 on a real socket.
+    "moto[s3,server]>=5",
     "ruff>=0.5",
     "mypy>=1.10",
     "freezegun>=1.5",
+    # validates `--json` / `--format json` output against the committed
+    # schemas in schemas/cli/ (SPEC §12)
+    "jsonschema>=4.20",
     # Installed unconditionally so mypy (pinned to python_version 3.10) can
     # resolve the `import tomli` fallback branch in config/loader.py.
     "tomli>=2",
@@ -62,6 +67,20 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/eosdk"]
+
+# The sdist is a buildable source tree, not a repo mirror. SPEC.md and the test
+# plan are design documents for contributors (they live in the repo, and the
+# README links to them there); `data/` holds EOData that smoke tests download
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "SPEC.md",
+    "RELEASING.md",
+    "smoke-summary.json",
+    ".claude",
+    "data",
+    "site",
+    "benchmarks",
+]
 
 [tool.ruff]
 line-length = 100
@@ -93,7 +112,9 @@ testpaths = ["tests"]
 addopts = "-q --strict-markers"
 markers = [
     "integration: end-to-end tests over respx fixtures",
+    "e2e: multi-step journeys over the FakePlatform harness",
     "smoke: live tests against a real platform (EOSDK_SMOKE=1)",
+    "smoke_auth: live tests needing credentials",
     "slow: transfers real data; opt in explicitly",
 ]
 

@@ -1,4 +1,4 @@
-"""Catalogue protocol (SPEC §6.5)."""
+"""Catalogue protocol."""
 
 from __future__ import annotations
 

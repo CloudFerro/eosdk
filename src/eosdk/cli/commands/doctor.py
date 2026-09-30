@@ -1,4 +1,4 @@
-"""``eo doctor`` — health checks with pipeline-friendly exit codes (SPEC §6.8)."""
+"""``eo doctor`` — health checks with pipeline-friendly exit codes."""
 
 from __future__ import annotations
 

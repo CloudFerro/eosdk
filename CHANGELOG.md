@@ -10,6 +10,125 @@ explicitly.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-30
+
+### Added
+
+- `schemas/eo-services.schema.json`, a JSON Schema for the platform discovery
+  document (SPEC §6.2), and `scripts/validate_eo_services.py`, which validates
+  a served or local `eo-services.json` against it plus the semantic checks the
+  schema cannot express (real calendar dates, a usable `/realms/` split, a
+  `replacement` pointing at a missing sibling strategy).
+- CLI commands `eo get`, `eo collections`, `eo queryables`, `eo list`, and
+  `eo cat`, mirroring `client.get()`, `client.collections()`,
+  `client.queryables()`, `client.list()`, and `client.open()` so the whole
+  high-level surface is reachable from both interfaces.
+- `eo download --resume/--no-resume`, exposing the existing
+  `client.download(resume=...)` knob on the CLI (default on: the s3 backend
+  resumes partial files, http restarts).
+- `eo keys create --fresh` to force a new key pair (`client.keys.create`)
+  instead of reusing the labeled one (`client.keys.get_or_create`, still the
+  default with `--label`).
+- Public profile-management API on `eosdk.config` (`init_profile`, `set_value`,
+  `set_default_profile`, `list_profiles`, `get_default_profile`,
+  `save_discovered_profile`, `user_config_path`), mirroring the
+  `eo config init/set/use/profiles` commands for library callers.
+- `ODataCatalogue` is now exported from `eosdk.catalogue`, and `S3KeysProvider`
+  /`S3Credentials` from `eosdk.auth` (matching `StacCatalogue` and
+  `S3Downloader`).
+- README gains Documentation, Contributing, Acknowledgements, Authors, and
+  License sections.
+- Documentation: a "Searching the catalogue" guide covering the shared
+  query model over STAC/OData (collection/bbox/datetime/filters/sort/limit),
+  filter operators and cross-backend aliases, the per-backend collection-id
+  split, `SearchResult` laziness, and the raw-query escape hatches — on both
+  `client.search()` and `eo search`.
+- Documentation: an "Authorization" guide covering the Keycloak/JWT model,
+  anonymous access to public services, device-flow and username/password
+  login (`eo auth login` ↔ `client.auth`), transparent token refresh and the
+  per-profile on-disk session cache, `eo auth status`/`logout`, and how the
+  separate S3-backend key pairs relate.
+- `schemas/cli/` now holds a committed JSON Schema per machine-readable command
+  (`search`, `get`, `list`, `collections`, `queryables`, `keys`, `doctor`,
+  `discover`), so `--json` / `--format json` output is a versioned contract:
+  the required field set is pinned and unknown fields are tolerated on read.
+- End-to-end test suite (`tests/e2e/`, marker `e2e`): 244 hermetic journeys over
+  a `FakePlatform` harness that projects one product set into STAC, OData,
+  `Nodes` and S3, so the protocol (`stac`/`odata`), backend (`http`/`s3`) and
+  CLI-vs-library surfaces are checked for agreement rather than only for
+  working. Covers discovery bootstrap, resilience (retry, refresh, mixed-batch,
+  resume across a process boundary), cache reuse between runs, the `--json`
+  schemas, out-of-process `eo` pipes and exit codes, and runs `examples/` so
+  they cannot rot. No network or credentials; runs in the default CI job.
+- Live smoke suite is tiered `smoke` / `smoke_auth` / `slow` and runs nightly,
+  with server-side key pairs tracked in a registry and revoked in teardown, and
+  a run-summary artifact for triage.
+
+### Changed
+
+- **Breaking:** `client.search()` now refuses an unbounded query (no
+  collection/bbox/datetime/filter), raising `ConfigError` — matching `eo search`
+  and the OData backend, which already refused; previously the default STAC
+  backend ran it. Give at least one constraint.
+- **Breaking:** the S3 key identifier is now named `access_key` everywhere:
+  `eo keys list --json` emits it under `access_key` (was `access_id`, matching
+  the `S3Credentials.access_key` attribute and the `AWS_ACCESS_KEY_ID` export),
+  and `S3KeysProvider.revoke()`'s parameter is renamed `access_id` →
+  `access_key`. `S3Credentials.key_id` remains an alias for `access_key`.
+- **Breaking:** the built-in CDSE endpoint defaults are removed. CDSE now
+  publishes its discovery document at
+  `https://discover.dataspace.copernicus.eu/.well-known/eo-services.json`, so
+  the SDK no longer hard-codes any deployment. Connect to a platform once with
+  `eo config init --platform https://discover.dataspace.copernicus.eu` (or
+  `Client(platform=...)` / `EOSDK_PLATFORM`); a bare `Client()` with no local
+  configuration resolves nothing, and first use of a service raises
+  `ConfigError` naming the exact knob to set. `keycloak_realm` and
+  `keycloak_client_id` lost their CDSE defaults (`CDSE` / `cdse-public`) and
+  now resolve from local config or discovery like every other field; the
+  deployment-agnostic `s3_region = "default"` is the only remaining model
+  default. Smoke tests likewise discover endpoints from the CDSE platform
+  root unless `EOSDK_SMOKE_PLATFORM` overrides it.
+
+### Fixed
+
+- A read timeout (the endpoint accepts the connection but never answers — e.g.
+  a slow or stalled catalogue search) no longer masquerades as
+  `EndpointUnreachable` telling you to "check the endpoint URL". It now raises
+  the new `ServiceTimeout` (a subclass of `EndpointUnreachable`, so existing
+  handlers still catch it) naming the elapsed timeout and advising a retry or a
+  higher `Client(timeout=...)`. Connect failures (refused/DNS/connect timeout)
+  keep the original URL-checking guidance.
+- S3 backend: first use of a freshly minted S3 key no longer races key
+  propagation. Key pairs reach the S3 gateway asynchronously (normally
+  seconds), so the first request with a new key could fail with a raw
+  `InvalidAccessKeyId` botocore error. The downloader now gates first use on
+  the gateway accepting the key (cheap probe, doubling backoff, 60 s cap);
+  a key that never activates raises the new `S3KeyNotActive` with the
+  likely cause (account key cap) and the `eo keys` commands to fix it.
+- `eo doctor`: service and auth probes now trigger platform discovery for
+  `<pending>` endpoints (as any service call would) instead of skipping them
+  as unconfigured. Previously a discovery-based profile with no pinned
+  endpoints had every Services check reported as skipped, never probed.
+- `eo doctor`: the S3 credentials check no longer reports a false failure when
+  there is no session. Minting a managed key requires login, so without one the
+  check is now skipped (`-`, "not logged in — run `eo auth login`") rather than
+  failing, and the credentials service is not called. When a session *is*
+  present but the credentials service still rejects the request (HTTP 401/403,
+  or an anonymous call refused before login), the hint points at
+  `eo auth login` instead of misdirecting to the `s3_endpoint` config.
+- `eo config init --platform`: re-running it against a discovery-managed
+  profile of the same name now resyncs that profile in place instead of
+  failing with `profile '<name>' already exists (pass --force)`. `--force` is
+  still required only to overwrite a user-owned profile that happens to share
+  the name; pass `--name` to keep a hand-tuned profile separate from the
+  auto-managed one.
+- `eo auth login` (device flow): a failed device-authorization request now
+  surfaces the server's own `error`/`error_description` instead of a bare
+  `HTTP <code>`. When the realm advertises the device endpoint but the client
+  has the grant disabled (Keycloak `unauthorized_client` — e.g. CDSE's public
+  client), the error points at `eo auth login --username <you>`, the working
+  fallback, rather than leaving a dead-end `HTTP 400`.
+
 ## [0.4.0] - 2026-07-15
 
 ### Added
@@ -188,8 +307,9 @@ explicitly.
   policy, `route()` URL builder, and OData key encoding.
 - CI: ruff + mypy strict + pytest on Python 3.10–3.13, build + wheel smoke.
 
-[unreleased]: https://gitlab.cloudferro.com/data-access/eosdk/-/compare/v0.4.0...master
-[0.4.0]: https://gitlab.cloudferro.com/data-access/eosdk/-/compare/v0.3.0...v0.4.0
-[0.3.0]: https://gitlab.cloudferro.com/data-access/eosdk/-/compare/v0.2.0...v0.3.0
-[0.2.0]: https://gitlab.cloudferro.com/data-access/eosdk/-/compare/v0.1.0...v0.2.0
-[0.1.0]: https://gitlab.cloudferro.com/data-access/eosdk/-/tags/v0.1.0
+[unreleased]: https://github.com/CloudFerro/eosdk/compare/v0.5.0...master
+[0.5.0]: https://github.com/CloudFerro/eosdk/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/CloudFerro/eosdk/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/CloudFerro/eosdk/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/CloudFerro/eosdk/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/CloudFerro/eosdk/releases/tag/v0.1.0

@@ -1,4 +1,4 @@
-"""Platform discovery document: schema, parsing, projection (SPEC §6.2).
+"""Platform discovery document: schema, parsing, projection.
 
 The top-level ``version`` identifies the document *schema*; an unrecognized
 major version rejects the whole document rather than partially parsing it.
@@ -26,7 +26,7 @@ class DiscoveryError(ConfigError):
 
 
 class PlatformInfo(BaseModel):
-    """Top-level platform identity block (optional, SPEC §6.2).
+    """Top-level platform identity block (optional).
 
     ``name`` doubles as the config-profile name the SDK snapshots the
     discovered configuration under; :attr:`profile_name` normalizes it.
@@ -78,14 +78,14 @@ def parse_document(raw: dict[str, Any]) -> DiscoveryDocument:
 
 
 def derive_discovery_url(platform: str, discovery_url: str | None = None) -> str:
-    """SPEC §6.2 resolution: explicit ``discovery_url`` wins, else well-known."""
+    """Resolution order: explicit ``discovery_url`` wins, else the well-known path."""
     if discovery_url:
         return discovery_url
     return f"{platform.rstrip('/')}/.well-known/eo-services.json"
 
 
 def project_endpoints(document: DiscoveryDocument) -> dict[str, str]:
-    """Project the nested document onto the flat ``Endpoints`` fields (SPEC §6.2).
+    """Project the nested document onto the flat ``Endpoints`` fields.
 
     Multi-strategy services collapse onto their single base field; per-strategy
     URLs are consumed by :func:`strategy_sets` instead.
@@ -147,7 +147,7 @@ def _service_strategies(service: dict[str, Any]) -> dict[str, StrategyInfo]:
 
 
 def strategy_sets(document: DiscoveryDocument) -> dict[str, tuple[Strategy, ...]]:
-    """Merge discovery info onto the built-in matrix (SPEC §6.2/§6.3).
+    """Merge discovery info onto the built-in matrix.
 
     Order stays the SDK's built-in preference. Discovery may mark strategies
     deprecated/sunset, carry per-strategy URLs and api_versions, and *restrict*

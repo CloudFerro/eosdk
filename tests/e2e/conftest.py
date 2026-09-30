@@ -61,13 +61,19 @@ def _instant_sleep(monkeypatch: pytest.MonkeyPatch) -> list[float]:
 
 @pytest.fixture(autouse=True)
 def _plain_console(monkeypatch: pytest.MonkeyPatch) -> None:
-    """No ANSI, no wrapping: CLI output is parsed, not eyeballed."""
+    """No ANSI, no wrapping: CLI output is parsed, not eyeballed. Typer renders
+    usage errors on its own Console, forced into terminal mode at import time
+    under GITHUB_ACTIONS / FORCE_COLOR / PY_COLORS, so disable that one too."""
+    import typer.rich_utils
+
     from eosdk.cli import _state
 
     for console in (_state.stdout, _state.stderr):
         monkeypatch.setattr(console, "_force_terminal", False)
         monkeypatch.setattr(console, "_color_system", None)
         monkeypatch.setattr(console, "_width", 400)
+    monkeypatch.setattr(typer.rich_utils, "FORCE_TERMINAL", False)
+    monkeypatch.setattr(typer.rich_utils, "COLOR_SYSTEM", None)
 
 
 # -- the platform --------------------------------------------------------------

@@ -1,4 +1,4 @@
-"""``eo discover`` — fetch and print the platform discovery document (SPEC §7.4)."""
+"""``eo discover`` — fetch and print the platform discovery document."""
 
 from __future__ import annotations
 

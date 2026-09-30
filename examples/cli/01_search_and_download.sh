@@ -51,8 +51,36 @@ eo search --collection sentinel-2-l2a --from 2026-06-01 --to 2026-06-08 \
 # eo download 5b9f4d4e-... c2a7de3f-... --output ./data
 # eo download s3://eodata/Sentinel-2/.../S2B_...SAFE --via s3 --output ./data
 
-# -- 6. useful switches ------------------------------------------------------------
+# -- 6. inspect the catalogue vocabulary (anonymous, like search) ------------------
+# Which collection ids can I search? STAC uses product-level ids
+# (`sentinel-2-l2a`), OData mission-level names (`SENTINEL-2`).
+# Important: The OData protocol does not provide collection endpoints, so `eo collections`
+# is a convenience for the STAC protocol only.
+eo collections
+
+# What can I put in --filter for a collection? The names print here are usable
+# verbatim as --filter keys for the same protocol.
+eo queryables sentinel-2-l2a
+eo queryables SENTINEL-2 --protocol odata --json | jq -r '.[].name'
+
+# Fetch one product's normalized metadata by id (mirrors client.get()):
+# eo get 5b9f4d4e-... --json | jq '{name, size, s3_path}'
+
+# -- 7. inspect the files inside a product -----------------------------------------
+# List a product's internal file tree (SAFE archive). --via http needs a product
+# id; --via s3 takes an S3 path (e.g. from `eo search --format s3`).
+# eo list 5b9f4d4e-... --via http -r
+# eo list s3://eodata/Sentinel-2/.../S2B_...SAFE --via s3 --json | jq -r '.[].path'
+#
+# Stream one file to stdout without downloading the whole product — a ranged
+# read, so only the requested bytes move (s3 backend only):
+# eo cat 5b9f4d4e-... GRANULE/.../IMG_DATA/R10m/T33UXP_..._B04_10m.jp2 \
+#        --via s3 > B04.jp2
+
+# -- 8. useful switches ------------------------------------------------------------
 # --via s3            S3 backend (resumable; S3 keys minted automatically)
+# --no-resume         restart partial files instead of resuming them (s3 backend;
+#                     http always restarts, so the flag is a no-op there)
 # --no-checksum       skip checksum verification
 # --quiet             no progress bars (progress goes to stderr, so pipes are
 #                     safe either way)

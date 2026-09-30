@@ -64,7 +64,7 @@ class TestSingleRootBootstrap:
         assert resolved["keycloak_realm"].value == "eodata"
 
     @respx.mock
-    def test_discovered_client_id_beats_builtin_default(self, client: Client) -> None:
+    def test_discovered_client_id_resolves(self, client: Client) -> None:
         mock_platform()
         client._endpoint("keycloak", service="keycloak")
         resolved = client.config.resolved()
@@ -97,7 +97,7 @@ class TestSingleRootBootstrap:
             pinned = client._endpoint("eodata_http", service="eodata_http")
             assert pinned == "https://download-canary.example.eu"  # pin beats discovery
             stac = client._endpoint("catalogue_stac", service="catalogue_stac")
-            assert stac == "https://catalogue.example.eu/stac"  # sibling discovered
+            assert stac == "https://stac.example.eu/v1"  # sibling discovered
             resolved = client.config.resolved()
             assert resolved["eodata_http"].source.startswith("profile:staging")
             assert resolved["catalogue_stac"].source == "discovery"

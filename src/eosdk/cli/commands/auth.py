@@ -1,4 +1,4 @@
-"""``eo auth`` — login, logout, status (SPEC §6.4 CLI surface)."""
+"""``eo auth`` — login, logout, status."""
 
 from __future__ import annotations
 

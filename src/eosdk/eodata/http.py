@@ -1,11 +1,11 @@
-"""HTTP download backend (SPEC §6.6).
+"""HTTP download backend.
 
 The HTTP data-access service serves whole objects only — it supports neither
 HTTP ``Range`` requests nor partial reads, so ``supports_resume`` is False: an
 interrupted transfer is restarted from the beginning (a logged no-op, never an
 error).
 
-Strategy scaffolding (SPEC §6.3): the ``odata`` strategy is current, ``resto``
+Strategy scaffolding: the ``odata`` strategy is current, ``resto``
 is a recognized fallback name that is not implemented in Phase 1. Discovery-
 driven selection replaces the static preference in Phase 3.
 """
@@ -32,7 +32,7 @@ def _quote_segment(segment: str) -> str:
     ``.../Products(<uuid>)/Nodes(S2A_...SAFE)/Nodes(GRANULE)/...``), so names
     are percent-encoded rather than OData-key-quoted; parentheses and other
     reserved characters inside names are escaped. Never assemble these with
-    raw f-strings (SPEC §6.6).
+    raw f-strings.
     """
     return quote(segment, safe="")
 
@@ -161,7 +161,7 @@ class HttpDownloader(BaseDownloader):
         """Address a directory: Products({id})/Nodes(a)/Nodes(b)/.../Nodes.
 
         Every name segment goes through :func:`odata_key` — node names contain
-        spaces and parentheses in real Sentinel products (SPEC §6.6).
+        spaces and parentheses in real Sentinel products.
         """
         url = route(self._base, ROUTES[self._strategy]["nodes_root"], id=product.id)
         for segment in (s for s in path.split("/") if s):

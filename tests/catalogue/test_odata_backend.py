@@ -194,17 +194,12 @@ class TestEntryNormalizationEdgeCases:
 
 
 class TestCollectionsAndQueryables:
-    @respx.mock
-    def test_collections_keep_raw_payload(self, catalogue: ODataCatalogue) -> None:
-        respx.get(f"{BASE}/odata/v1/Collections").mock(
-            return_value=httpx.Response(
-                200,
-                json={"value": [{"Name": "SENTINEL-2", "Description": "MSI", "Extra": 1}]},
-            )
-        )
-        (collection,) = catalogue.collections()
-        assert collection.id == "SENTINEL-2"
-        assert collection.raw["Extra"] == 1
+    def test_collections_is_unsupported(self, catalogue: ODataCatalogue) -> None:
+        # CSC/OData exposes no collection-enumeration endpoint (only Products,
+        # Attributes, DeletedProducts, Nodes); listing must fail cleanly rather
+        # than hit a phantom /Collections route.
+        with pytest.raises(UnsupportedQueryFeature, match="collections"):
+            catalogue.collections()
 
     @respx.mock
     def test_queryables_normalized_from_attributes(self, catalogue: ODataCatalogue) -> None:

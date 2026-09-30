@@ -39,7 +39,8 @@ that hides protocol and credential complexity behind one coherent interface:
   owned by the SDK; user code never touches raw credentials.
 - Typed, layered configuration with named profiles and environment overrides.
 - Service URL discovery so endpoints are not baked into releases.
-- First-class CLI mirroring the library 1:1, composable in shell pipelines.
+- First-class CLI mirroring the library's high-level surface 1:1 (the §7.3
+  lower-level escape hatches stay library-only), composable in shell pipelines.
 - Built-in diagnostics (`eo doctor`) for config, auth, and service health.
 - Extensible: a future catalogue protocol or access service is one new module,
   not an API change.
@@ -56,7 +57,8 @@ that hides protocol and credential complexity behind one coherent interface:
 
 1. **Python library** `eosdk` — sync `Client` in v1; `AsyncClient` with the same
    surface planned from day one (shared transport supports both).
-2. **CLI** `eo` — thin wrapper over the library (typer), identical behaviour.
+2. **CLI** `eo` — thin wrapper over the library (typer), identical behaviour;
+   every high-level operation has a verb (the §7.3 escape hatches stay library-only).
 3. Documentation: quickstart, API reference, CLI reference, deployment/config guide.
 4. Test suite (unit + integration) and CI pipeline.
 5. PyPI package with semantic versioning.
@@ -122,9 +124,9 @@ eosdk/
 │   ├── settings.py        # Endpoints + Profile models (pydantic)
 │   ├── loader.py          # resolution chain: kwargs > env (EOSDK_*) >
 │   │                      #   ./eosdk.toml > ~/.config/eosdk/config.toml >
-│   │                      #   discovery > built-in defaults
+│   │                      #   discovery
 │   ├── profiles.py        # profile CRUD, default_profile handling
-│   └── defaults.py        # built-in endpoints for known deployments
+│   └── defaults.py        # field -> EOSDK_* env-var map
 ├── discovery/
 │   ├── platform.py        # /.well-known/eo-services.json fetch + parse
 │   ├── oidc.py            # Keycloak openid-configuration resolution
@@ -195,7 +197,7 @@ class Endpoints(BaseModel):
     s3_region: str = "default"
     s3_credentials: HttpUrl         # S3 credentials service base URL
     keycloak: HttpUrl
-    keycloak_realm: str = "eodata"
+    keycloak_realm: str | None = None   # from local config or discovery
     discovery_url: HttpUrl | None = None   # overrides {platform}/.well-known/... derivation
 ```
 
@@ -206,7 +208,10 @@ class Endpoints(BaseModel):
 3. project-local `./eosdk.toml`
 4. user config `~/.config/eosdk/config.toml` (selected profile)
 5. remote discovery document (when a `platform` root is configured)
-6. built-in defaults for known deployments
+
+No built-in endpoint defaults exist for any deployment: a platform is
+configured locally or bootstrapped from its discovery document. Only
+deployment-agnostic model defaults (e.g. `s3_region = "default"`) apply.
 
 **Profiles** — named endpoint sets in the config file; `default_profile` key;
 a profile may define only `platform = "<root URL>"` and let discovery fill the
@@ -293,7 +298,7 @@ to the SDK. Resolution order for the discovery URL itself:
   "platform":     { "name": "example-eu",
                     "description": "Example Earth-observation data platform (example.eu)" },
   "services": {
-    "catalogue":    { "stac": { "url": "https://catalogue.example.eu/stac" },
+    "catalogue":    { "stac": { "url": "https://stac.example.eu/v1" },
                       "odata": { "url": "https://catalogue.example.eu/odata",
                                  "api_version": "v1" } },
     "data_access":  { "http": { "odata": { "url": "https://download.example.eu/odata",
@@ -313,6 +318,13 @@ to the SDK. Resolution order for the discovery URL itself:
   }
 }
 ```
+
+`catalogue.stac.url` is the STAC API landing page itself, not a version-free
+base: the SDK uses it verbatim and reads everything else from it (see
+per-service discovery below). A `/v1` there — as in the example, and on CDSE —
+is part of the deployment's path, not an SDK-owned version, so `stac` carries
+no `api_version`; STAC API compatibility is checked through the landing page's
+`conformsTo` instead (§6.3).
 
 Data access is described by one `data_access` service split by transport
 protocol: `http` (whole-object downloads over HTTP) and `s3` (object storage).
@@ -523,7 +535,7 @@ credentials service:
   `queryables(collection) -> list[Queryable]` (filterable attributes: STAC
   `/queryables`, CSC OData `Attributes(<collection>)`; names are backend-native
   and raise `UnsupportedQueryFeature` where the backend has no such endpoint).
-- `protocol="stac" | "odata"` selectable per call; default from config.
+- `protocol="stac" | "odata"` selectable per call; default `stac`.
 - Both backends translate the shared `Query` object (see §5) and normalize
   results to `Product`.
 - Transparent pagination in `SearchResult`; per-page fetch uses the shared
@@ -684,7 +696,7 @@ with client.open(product, path=band.path, via="s3") as f:
 ### 7.2 Library — configuration and discovery
 
 ```python
-Client()                                             # built-in defaults
+Client()                                             # local config (default profile)
 Client(profile="staging")
 Client(platform="https://platform.example.eu")       # single-root bootstrap
 Client(profile="prod",
@@ -693,6 +705,14 @@ Client(profile="prod",
 client.config.resolved()      # endpoint -> (value, source) mapping
 client.discovery.services()   # parsed discovery document
 client.discovery.refresh()    # bust TTL cache
+
+# Profile management mirrors the `eo config` commands (comment-preserving, atomic):
+from eosdk import config
+path = config.user_config_path()
+config.list_profiles(path)                                              # == eo config profiles
+config.init_profile(path, "prod", {"platform": "https://platform.example.eu"})  # == eo config init
+config.set_value(path, "profiles.staging.eodata_http", "http://localhost:8080") # == eo config set
+config.set_default_profile(path, "staging")                             # == eo config use
 ```
 
 ### 7.3 Library — lower level
@@ -701,13 +721,17 @@ client.discovery.refresh()    # bust TTL cache
 from eosdk.auth import KeycloakAuth, S3KeysProvider
 from eosdk.catalogue import ODataCatalogue
 from eosdk.eodata import S3Downloader
+from eosdk.transport import Transport
 
-auth = KeycloakAuth(url=..., realm=..., client_id=..., username=...)
-cat  = ODataCatalogue(base_url=..., auth=auth)
+transport = Transport()                                        # shared HTTP transport
+auth = KeycloakAuth(url=..., realm=..., client_id=..., transport=transport)
+auth.login(username=..., password=...)                         # or auth.login_device(prompt)
+
+cat  = ODataCatalogue(base_url=..., transport=transport, auth=auth)
 raw  = cat.query_raw("Products?$filter=contains(Name,'S1A') and ...")  # escape hatch
 prod = cat.get("S2B_MSIL2A_20260615T095029_...")                       # normalized Product
 
-keys = S3KeysProvider(auth=auth).get_or_create(label="my-pipeline")
+keys = S3KeysProvider(auth=auth, base_url=..., transport=transport).get_or_create(label="my-pipeline")
 dl   = S3Downloader(endpoint=..., credentials=keys)
 dl.fetch(prod, target="/data", concurrency=8)
 ```
@@ -736,6 +760,11 @@ eo keys list
 eo keys revoke <key-id>
 eo keys create --export              # AWS_ACCESS_KEY_ID=... for aws/rclone interop
 
+# catalogue inspection (each mirrors the like-named Client method; default protocol stac)
+eo collections                                 # collection ids   == client.collections()
+eo queryables SENTINEL-1                        # filterable attrs == client.queryables()
+eo collections --protocol odata                # ...or pick a backend explicitly
+
 # search & download
 eo search --collection SENTINEL-1 \
           --bbox 22.5,52.9,24.0,53.5 \
@@ -743,7 +772,10 @@ eo search --collection SENTINEL-1 \
           --filter "productType=GRD" \
           --protocol odata --format json
 
+eo get S2B_MSIL2A_20260615T095029_... --json   # one product       == client.get()
 eo download S2B_MSIL2A_20260615T095029_... -o ./data --via http
+eo list S2B_MSIL2A_20260615T095029_... --via http           # files in product == client.list()
+eo cat  S2B_MSIL2A_20260615T095029_... preview.jpg --via s3 > preview.jpg  # ranged read == client.open()
 eo search ... --format json | eo download - --via s3 -c 8  # pipe search -> download
 ```
 

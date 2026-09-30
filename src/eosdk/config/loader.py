@@ -1,4 +1,4 @@
-"""Configuration resolution chain (SPEC §6.1).
+"""Configuration resolution chain.
 
 Per-field precedence, most specific wins:
 
@@ -8,11 +8,16 @@ Per-field precedence, most specific wins:
 4. user config ``~/.config/eosdk/config.toml`` (selected profile)
 5. remote discovery document (stubbed until Phase 3 — fields resolve to
    ``<pending>`` when a ``platform`` root is configured)
-6. built-in defaults
+6. field defaults declared on the ``Endpoints`` model (non-deployment-specific
+   conventions only, e.g. ``s3_region = "default"``; endpoint URLs have none)
 
-The ``platform`` root itself is resolved from local layers only (steps 1-4/6),
-never from discovery — this breaks the config→discovery cycle (SPEC §4.2).
+The ``platform`` root itself is resolved from local layers only (steps 1-4),
+never from discovery — this breaks the config→discovery cycle.
 """
+
+# Design reference: SPEC.md §6.1 (per-field precedence) and §4.2 (the
+# config->discovery cycle break). SPEC.md lives in the repository and is not
+# shipped in the distribution, so keep the docstring above self-contained.
 
 from __future__ import annotations
 
@@ -23,7 +28,6 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from pydantic import ValidationError
 
-from eosdk.config import defaults as _defaults
 from eosdk.config.defaults import (
     ENV_PLATFORM,
     ENV_PROFILE,
@@ -39,6 +43,7 @@ from eosdk.config.settings import (
     ResolvedConfig,
     ResolvedValue,
 )
+from eosdk.discovery.models import derive_discovery_url
 from eosdk.exceptions import ConfigError
 
 if TYPE_CHECKING:
@@ -51,7 +56,7 @@ else:
 
 
 class DiscoveryHook(Protocol):
-    """Seam for SPEC §6.1 precedence step 5; the real resolver lands in Phase 3."""
+    """Seam for precedence step 5; the real resolver lands in Phase 3."""
 
     def resolve(self, platform: str) -> dict[str, str]:
         """Return field -> endpoint URL for services the platform advertises."""
@@ -193,6 +198,13 @@ def load(
     values: dict[str, Any] = {}
     for fieldname in Endpoints.model_fields:
         resolved = local_layers(fieldname)
+        # discovery_url is always derivable from the platform root — it is a
+        # location, not a discovered service, so it never stays <pending>.
+        if resolved is None and fieldname == "discovery_url" and platform_value is not None:
+            derived_url = derive_discovery_url(platform_value)
+            resolved = ResolvedValue(
+                _validate_url("discovery_url", derived_url, source="derived"), "derived"
+            )
         if resolved is None and platform_value is not None:
             if fieldname in discovered:
                 resolved = ResolvedValue(
@@ -202,7 +214,7 @@ def load(
             else:
                 resolved = ResolvedValue(None, "discovery")
         if resolved is None:
-            default = getattr(_defaults.BUILTIN_DEFAULTS, fieldname)
+            default = Endpoints.model_fields[fieldname].default
             resolved = ResolvedValue(default, "default" if default is not None else "unset")
         sources[fieldname] = resolved
         if resolved.value is not None:

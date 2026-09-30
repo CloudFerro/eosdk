@@ -2,7 +2,7 @@
 # Configuration and profiles with the `eo` CLI.
 #
 # Endpoints resolve per field, most specific wins:
-#   Client kwargs > EOSDK_* env > ./eosdk.toml > user profile > discovery > defaults
+#   Client kwargs > EOSDK_* env > ./eosdk.toml > user profile > discovery
 set -euo pipefail
 
 # -- 1. inspect the resolved configuration -----------------------------------------

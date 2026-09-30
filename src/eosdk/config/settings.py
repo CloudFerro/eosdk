@@ -24,14 +24,14 @@ URL_ADAPTER: TypeAdapter[str] = TypeAdapter(Url)
 
 
 class Endpoints(BaseModel):
-    """Per-deployment service endpoints (SPEC §6.1).
+    """Per-deployment service endpoints.
 
     All fields optional here: required-ness is enforced at first use of the
     owning service via :meth:`ResolvedConfig.require`, because some fields may
     legitimately stay unresolved (discovery-pending) at construction time.
 
-    ``keycloak_client_id`` is an addition over the SPEC §6.1 model: auth cannot
-    work without it (SPEC §14.6 is unresolved; default is a placeholder).
+    ``keycloak_client_id`` is an addition over the original endpoint model:
+    auth cannot work without it.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -43,8 +43,8 @@ class Endpoints(BaseModel):
     s3_region: str = "default"
     s3_credentials: str | None = None
     keycloak: str | None = None
-    keycloak_realm: str = "CDSE"
-    keycloak_client_id: str = "cdse-public"
+    keycloak_realm: str | None = None
+    keycloak_client_id: str | None = None
     discovery_url: str | None = None
 
 
@@ -65,7 +65,7 @@ class Profile(BaseModel):
     """A named endpoint set in the config file; any subset may be pinned.
 
     ``discovered_from`` marks a profile the SDK materialized from a platform
-    discovery document (SPEC §6.2): it holds the discovery URL, and its
+    discovery document: it holds the discovery URL, and its
     presence is what allows the SDK to resync the profile on re-fetch.
     Profiles without it are user-owned and never touched.
     """
@@ -122,7 +122,7 @@ class ResolvedConfig:
     verify_tls: bool = True
 
     def resolved(self) -> dict[str, ResolvedValue]:
-        """Endpoint -> (value, source) mapping (SPEC §6.1 introspection)."""
+        """Endpoint -> (value, source) mapping, for config introspection."""
         return dict(self.sources)
 
     def apply_discovered(self, projected: dict[str, str]) -> None:
@@ -130,7 +130,7 @@ class ResolvedConfig:
 
         Only fields whose source is ``discovery`` and value is still unset are
         touched — locally pinned values are final and never re-consulted
-        (SPEC §6.1/§6.2 per-service precedence).
+        (per-service precedence).
         """
         for fieldname, value in projected.items():
             current = self.sources.get(fieldname)

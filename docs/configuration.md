@@ -7,7 +7,11 @@ Endpoints resolve per field, most specific wins:
 3. project-local `./eosdk.toml`
 4. user config `~/.config/eosdk/config.toml` (selected profile)
 5. remote discovery document (when a `platform` root is configured)
-6. built-in defaults (the Copernicus Data Space Ecosystem)
+
+There are no built-in deployment defaults: connect to a platform once with
+`eo config init --platform <root URL>` (for CDSE:
+`https://discover.dataspace.copernicus.eu`) or pin endpoints explicitly.
+Only generic conventions such as `s3_region = "default"` resolve on their own.
 
 `eo config show` (or `client.config.resolved()`) prints every endpoint with
 the source that provided it. Endpoints that only discovery can provide show
@@ -38,6 +42,21 @@ keycloak_realm  = "eodata"
 Manage from the CLI: `eo config init`, `eo config set profiles.staging.eodata_http
 https://...`, `eo config use staging`, `eo config profiles`. Writes preserve
 comments and layout.
+
+`eo config init --platform <url>` fetches the platform's discovery document
+immediately, names the profile after the platform's advertised name (override
+with `--name`), pins every resolved endpoint, and makes it the default — so
+`eo config show` reports real values, not `<pending>`. It fails if the platform
+is unreachable. Re-running it resyncs a discovery-managed profile of the same
+name in place (no `--force`); `--force` is only needed to overwrite a
+user-owned profile that happens to share the name. Pass `--name` to keep the
+discovery-managed profile separate from a hand-tuned one — the managed profile
+resyncs on each `init`, while your named profile is user-owned and never
+auto-touched. Omit `--platform` to enter endpoints manually instead. Run
+`eo doctor` afterwards to confirm the resolved endpoints are reachable.
+
+`discovery_url` is always derived from the `platform` root (source `derived`),
+so it too resolves rather than showing `<pending>`.
 
 ## Environment variables
 

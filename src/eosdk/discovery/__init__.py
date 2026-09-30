@@ -1,4 +1,4 @@
-"""Service discovery (SPEC §6.2).
+"""Service discovery.
 
 Phase 1 ships only the OIDC slice; the platform document, caching, and
 STAC/OData probes land in Phase 3.

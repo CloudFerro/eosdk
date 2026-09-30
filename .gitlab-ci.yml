@@ -7,6 +7,7 @@ stages:
   - build
   - linter
   - test
+  - nightly
 
 .uv:
   tags:
@@ -70,10 +71,15 @@ lint:
     - uv run ruff format --check .
     - uv run mypy
 
+# unit + integration + the hermetic e2e journeys (tests/e2e). The e2e suite
+# needs no credentials and no network — respx serves HTTP, moto serves S3 and
+# every backoff is injected — so it runs in the default job.
 test:
   extends: .uv
   stage: test
   image: "$UV_IMAGE:python$EO_PYTHON-bookworm-slim"
+  rules:
+    - if: $CI_PIPELINE_SOURCE != "schedule"
   parallel:
     matrix:
       - EO_PYTHON: ["3.10", "3.11", "3.12", "3.13", "3.14"]
@@ -89,6 +95,31 @@ test:
         coverage_format: cobertura
         path: coverage.xml
 
+# Scheduled pipelines only: hits the real platform with credentials from CI
+# variables. It alerts, it does not gate — an outage upstream is not a
+# regression in this repository. Configure a daily schedule in
+# CI/CD > Schedules; EOSDK_SMOKE_USERNAME / EOSDK_SMOKE_PASSWORD must be masked
+# project variables.
+smoke:
+  extends: .uv
+  stage: nightly
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  allow_failure: true
+  variables:
+    EOSDK_SMOKE: "1"
+    EOSDK_SMOKE_SUMMARY: smoke-summary.json
+  script:
+    - uv sync --frozen
+    - uv run pytest -m "smoke or smoke_auth or slow" -rs --junitxml=smoke-junit.xml
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths:
+      - smoke-summary.json
+    reports:
+      junit: smoke-junit.xml
+
 container_scan:
   stage: test
   needs:
@@ -96,7 +127,7 @@ container_scan:
   tags:
     - kubernetes
   image:
-    name: aquasec/trivy:0.64.1
+    name: aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
     entrypoint: [""]
   allow_failure: true
   variables:

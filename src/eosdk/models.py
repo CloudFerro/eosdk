@@ -1,4 +1,4 @@
-"""Protocol-agnostic domain models (SPEC §5).
+"""Protocol-agnostic domain models.
 
 All models are returned identically by every catalogue backend. ``SearchResult``
 is a lazy, re-iterable sequence of :class:`Product`: pages are fetched on demand
@@ -82,7 +82,7 @@ class Product(BaseModel):
 
 
 class Node(BaseModel):
-    """A file or directory inside a product's internal tree (SPEC §6.6).
+    """A file or directory inside a product's internal tree.
 
     ``path`` is logical and backend-agnostic (relative to the product root);
     each backend translates it to its own addressing.
@@ -106,7 +106,7 @@ class Collection(BaseModel):
 
 
 class Queryable(BaseModel):
-    """A filterable attribute advertised by a catalogue backend (SPEC §6.5).
+    """A filterable attribute advertised by a catalogue backend.
 
     ``name`` is backend-native (e.g. ``eo:cloud_cover`` on STAC, ``cloudCover``
     on OData) and is accepted as-is in ``Query.filters`` for that backend.
@@ -135,7 +135,7 @@ class _PageCache:
 
 
 class SearchResult:
-    """Lazy, re-iterable, thread-safe sequence of :class:`Product` (SPEC §5).
+    """Lazy, re-iterable, thread-safe sequence of :class:`Product`.
 
     ``fetch_page`` is called with ``None`` for the first page and with the
     previous page's ``next_token`` afterwards; a page with ``next_token=None``

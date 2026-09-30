@@ -1,4 +1,4 @@
-"""S3 Keys Manager client (SPEC §6.4), aligned to the CloudFerro API.
+"""S3 Keys Manager client, aligned to the CloudFerro API.
 
 Real API (https://s3-keys-manager.cloudferro.com/api/user/docs, v1.8.x):
 
@@ -9,7 +9,7 @@ Real API (https://s3-keys-manager.cloudferro.com/api/user/docs, v1.8.x):
 - ``DELETE /credentials/access_id/{access_id}``
 - ``PATCH  /credentials/access_id/{access_id}/secret_key`` — rotate the secret.
 
-The service has **no label concept**, so the SPEC's labeled-reuse policy is
+The service has **no label concept**, so the labeled-reuse policy is
 implemented client-side: labels map to ``access_id`` + secret in a per-profile
 on-disk store (mode 0600). The configured base URL already contains the API
 root (e.g. ``.../api/user``); routes carry no version segment.
@@ -51,9 +51,13 @@ class S3Credentials(BaseModel):
     expiration_date: str | None = None
     label: str | None = None  # client-side only; the service has no labels
     organization: str | None = None
+    # Client-side marker: True when this object was minted by the call that
+    # returned it. Fresh keys propagate to the S3 gateway asynchronously, so
+    # consumers gate first use on activation (see S3Downloader).
+    created: bool = False
 
     @property
-    def key_id(self) -> str:  # canonical identifier for revoke/display
+    def key_id(self) -> str:  # alias for access_key (the canonical public identifier)
         return self.access_key
 
     def require_secret(self) -> str:
@@ -183,7 +187,8 @@ class S3KeysProvider:
             if method == "POST" and template == "credentials" and _is_key_limit(response, detail):
                 raise S3KeyLimitReached(detail=detail)
             raise AuthError(
-                f"S3 credentials service request failed with HTTP {response.status_code}: {detail}"
+                f"S3 credentials service request failed with HTTP {response.status_code}: {detail}",
+                status_code=response.status_code,
             )
         return response.json() if response.content else None
 
@@ -203,6 +208,7 @@ class S3KeysProvider:
             secret_key=SecretStr(str(payload["secret"])),
             expiration_date=payload.get("expiration_date"),
             label=label,
+            created=True,
         )
         if label is not None:
             self._store.put(label, credentials.access_key, credentials.require_secret())
@@ -237,16 +243,18 @@ class S3KeysProvider:
                 break
         return entries
 
-    def revoke(self, access_id: str) -> None:
+    def revoke(self, access_key: str) -> None:
+        # The service's wire path segment is literally "access_id"; only the
+        # public parameter name is the canonical "access_key".
         self._request(
             "DELETE",
             "credentials/access_id/{access_id}",
-            route_params={"access_id": access_id},
+            route_params={"access_id": access_key},
         )
-        self._store.drop_key(access_id)
+        self._store.drop_key(access_key)
 
     def get_or_create(self, label: str) -> S3Credentials:
-        """Labeled-reuse policy (SPEC §6.4 default), implemented client-side."""
+        """Labeled-reuse policy (the default), implemented client-side."""
         cached = self._store.get(label)
         if cached is not None:
             active = {c.access_key: c for c in self.list()}

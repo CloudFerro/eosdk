@@ -5,6 +5,12 @@ offer JSON output for pipelines (`--format json` on `search`, `--json`
 elsewhere); `eo doctor` exits non-zero on failure so it works as a
 pre-flight step: `eo doctor && eo download ...`.
 
+Every CLI verb maps to a `Client` method of the same name — `eo search`
+↔ `client.search()`, `eo get` ↔ `client.get()`, `eo list` ↔ `client.list()`,
+`eo cat` ↔ `client.open()`, and so on — so moving between the two surfaces is
+mechanical. The only library-only surface is the lower-level raw-query escape
+hatch (`ODataCatalogue.query_raw` / `StacCatalogue.raw_search`, SPEC §7.3).
+
 ## auth
 
 ```bash
@@ -32,22 +38,37 @@ eo search --collection sentinel-2-l2a \
 `id` (one product uuid per line), or `s3` (one S3 path per line,
 for `eo download --via s3` or external S3 tooling).
 
-## download
+## get, collections, queryables
 
 ```bash
-eo download <uuid> [-o DIR] [--via http|s3] [-c N] [--no-checksum]
+eo get <uuid> [--protocol stac|odata] [--json]   # one product's metadata
+eo collections [--protocol stac|odata] [--json]  # collection ids the catalogue offers
+eo queryables <collection> [--protocol] [--json] # a collection's --filter attribute names
+```
+
+## download, list, cat
+
+```bash
+eo download <uuid> [-o DIR] [--via http|s3] [-c N] [--resume/--no-resume] [--no-checksum]
 eo download s3://eodata/.../PRODUCT.SAFE --via s3
 eo search ... --format json | eo download - --via s3 -c 8
 eo download $(eo search ... --format id) -o ./data
+
+eo list <uuid> [PATH] [--via http|s3] [-r] [--json]   # files inside a product
+eo cat  <uuid> PATH --via s3 > out.bin                # one file, ranged read to stdout
 ```
+
+`--resume` (default on) resumes partial files on the s3 backend; http always
+restarts. `eo cat` and `eo list --via s3` take an S3 path (or a product whose
+S3 path is known), the same reference `eo download --via s3` accepts.
 
 ## keys
 
 ```bash
-eo keys create [--label X]        # secrets masked
-eo keys create --export           # AWS_ACCESS_KEY_ID=... lines for aws/rclone
+eo keys create [--label X] [--fresh]   # --fresh forces a new key instead of reuse
+eo keys create --export                # AWS_ACCESS_KEY_ID=... lines for aws/rclone
 eo keys list [--json]
-eo keys revoke <access-id> [--yes]
+eo keys revoke <access-key> [--yes]
 ```
 
 ## config, discover, doctor

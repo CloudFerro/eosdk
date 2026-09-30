@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gitlab.cloudferro.com/data-access/eosdk/-/raw/master/schemas/cli/collections.schema.json",
+  "title": "eo collections --json — catalogue collections",
+  "description": "Emitted by `eo collections --json` (src/eosdk/cli/commands/collections.py) as a JSON ARRAY. Each element is Collection.model_dump(mode=\"json\") (src/eosdk/models.py::Collection). `id` is the value `eo queryables <id>` and `eo search --collection <id>` accept for the same --protocol; it is backend-native, so the STAC and OData ids for one physical collection may differ. Hand-written on purpose: it is a contract, not a projection of the model. `additionalProperties` is true on the collection object — downstream consumers must tolerate fields added later.",
+  "type": "array",
+  "items": { "$ref": "#/$defs/collection" },
+  "$defs": {
+    "collection": {
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "description": "Backend-native collection identifier, usable as `--collection` for the same protocol.",
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "description": "Human-readable name; null when the backend does not say.",
+          "type": ["string", "null"]
+        },
+        "description": {
+          "description": "Longer prose description; null when the backend does not say.",
+          "type": ["string", "null"]
+        },
+        "extent_spatial": {
+          "description": "Spatial extents as bounding boxes. The first entry is the overall extent (STAC convention); further entries, when present, describe sub-regions.",
+          "type": ["array", "null"],
+          "items": {
+            "type": "array",
+            "items": { "type": "number" },
+            "minItems": 4
+          }
+        },
+        "extent_temporal": {
+          "description": "Temporal extents as [start, end] pairs, RFC 3339. Either bound may be null, meaning open-ended.",
+          "type": ["array", "null"],
+          "items": {
+            "type": "array",
+            "items": { "type": ["string", "null"] }
+          }
+        },
+        "raw": {
+          "description": "The untouched backend document the collection was normalized from. Backend-specific by design.",
+          "type": "object"
+        }
+      }
+    }
+  }
+}

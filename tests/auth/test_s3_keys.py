@@ -267,6 +267,10 @@ class TestLabeledReuse:
         assert create_mock.call_count == 1  # second call served from the secret store
         assert first.access_key == second.access_key
         assert second.require_secret() == SECRET
+        # freshness marker: consumers gate first use of a minted key on S3-side
+        # activation; a key reused from the store was accepted long ago
+        assert first.created is True
+        assert second.created is False
 
     @respx.mock
     def test_revoked_out_of_band_recreates(self, provider: S3KeysProvider) -> None:

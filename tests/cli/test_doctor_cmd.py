@@ -31,8 +31,10 @@ class TestDoctor:
     def test_unreachable_service_fails_with_hint(
         self, invoke: Invoke, platform_mocks: respx.Router
     ) -> None:
-        platform_mocks.head(EODATA_HTTP).mock(side_effect=httpx.ConnectError("refused"))
-        install_ready_routes(platform_mocks)
+        platform_mocks.head(EODATA_HTTP).mock(return_value=httpx.Response(200))
+        # the eodata store's readiness endpoint is unreachable
+        platform_mocks.get(f"{EODATA_HTTP}/ready").mock(side_effect=httpx.ConnectError("refused"))
+        platform_mocks.get(f"{S3_ENDPOINT}/ready").mock(return_value=httpx.Response(200))
         result = invoke("doctor")
         assert result.exit_code == 1
         assert "✗" in result.output
@@ -122,6 +124,7 @@ class TestDoctor:
 
         platform_mocks.head(EODATA_HTTP).mock(return_value=httpx.Response(200))
         install_ready_routes(platform_mocks)
+        invoke("auth", "login", "--username", "alice", "--password-stdin", input="pw\n")
 
         def reject(self: S3Downloader) -> None:
             raise ClientError(
@@ -138,6 +141,50 @@ class TestDoctor:
         assert "eo keys" in check["hint"]
         assert "s3_endpoint" not in check["hint"]
         assert result.exit_code == 1
+
+    def test_s3_credentials_403_hints_auth_login_not_endpoint(
+        self, invoke: Invoke, platform_mocks: respx.Router
+    ) -> None:
+        """A session is present but the credentials service still rejects the
+        request (403 — e.g. expired/insufficient token). The hint must send the
+        user to `eo auth login`, not at the s3_endpoint. (No session at all is a
+        separate path — that skips; see below.)"""
+        from tests.cli.test_keys_cmd import CREDENTIALS_URL
+
+        platform_mocks.head(EODATA_HTTP).mock(return_value=httpx.Response(200))
+        install_ready_routes(platform_mocks)
+        invoke("auth", "login", "--username", "alice", "--password-stdin", input="pw\n")
+        # session present, but the service rejects the mint request
+        platform_mocks.post(CREDENTIALS_URL).mock(return_value=httpx.Response(403))
+        result = invoke("doctor", "--json")
+        sections = json.loads(result.output)
+        services = next(s for s in sections if s["section"] == "Services")
+        check = next(r for r in services["results"] if r["name"] == "S3 credentials")
+        assert check["ok"] is False
+        assert "403" in check["detail"]
+        assert "eo auth login" in check["hint"]
+        assert "s3_endpoint" not in check["hint"]
+        assert result.exit_code == 1
+
+    def test_s3_credentials_skipped_when_not_logged_in(
+        self, invoke: Invoke, platform_mocks: respx.Router
+    ) -> None:
+        """No session at all: the check can only fail, so it is skipped (grey `-`),
+        not reported as a failure. The credentials service is never called."""
+        from tests.cli.test_keys_cmd import CREDENTIALS_URL
+
+        platform_mocks.head(EODATA_HTTP).mock(return_value=httpx.Response(200))
+        install_ready_routes(platform_mocks)
+        mint = platform_mocks.post(CREDENTIALS_URL).mock(return_value=httpx.Response(403))
+        result = invoke("doctor", "--json")
+        sections = json.loads(result.output)
+        services = next(s for s in sections if s["section"] == "Services")
+        check = next(r for r in services["results"] if r["name"] == "S3 credentials")
+        assert check["ok"] is None  # skipped, not a failure
+        assert "not logged in" in check["detail"]
+        assert mint.call_count == 0  # no wasted request without a session
+        # a lone skip must not drag the whole doctor run to a non-zero exit
+        assert result.exit_code == 0
 
     def test_nothing_configured_all_skips_exit_zero(self, invoke_bare: Invoke) -> None:
         result = invoke_bare("doctor")

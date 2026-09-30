@@ -4,9 +4,14 @@ on:
   push:
     branches: [master, init-implementation]
   pull_request:
+  schedule:
+    # nightly live smoke against the real platform; alerts, never blocks a release
+    - cron: "0 3 * * *"
+  workflow_dispatch:
 
 jobs:
   lint:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,7 +23,11 @@ jobs:
       - run: uv run ruff check .
       - run: uv run mypy
 
+  # unit + integration + the hermetic e2e journeys (tests/e2e). The e2e suite
+  # needs no credentials and no network: respx serves HTTP, moto serves S3 and
+  # every backoff is injected, so it belongs in the default job.
   test:
+    if: github.event_name != 'schedule'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -32,8 +41,16 @@ jobs:
           enable-cache: true
       - run: uv sync --group dev --python ${{ matrix.python }}
       - run: uv run pytest --cov=eosdk --cov-report=term
+        if: runner.os != 'Windows'
+      # tests/e2e/test_cli_shell.py spawns the `eo` console script against a
+      # local http.server plus moto's standalone S3 and interrupts it with
+      # SIGINT — none of which behaves the same on Windows. The library and CLI
+      # are covered in-process by the rest of the suite there.
+      - run: uv run pytest --cov=eosdk --cov-report=term --ignore=tests/e2e/test_cli_shell.py
+        if: runner.os == 'Windows'
 
   docs:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -42,6 +59,7 @@ jobs:
       - run: uv run --group docs mkdocs build --strict
 
   build:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,3 +72,31 @@ jobs:
           uv pip install --python /tmp/smoke/bin/python dist/*.whl
           /tmp/smoke/bin/python -c "import eosdk; print(eosdk.__version__)"
           /tmp/smoke/bin/eo --help
+
+  # Nightly only: hits the real platform. Failures alert; they never block a
+  # release, because an outage upstream is not a regression here.
+  smoke:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      EOSDK_SMOKE: "1"
+      EOSDK_SMOKE_USERNAME: ${{ secrets.EOSDK_SMOKE_USERNAME }}
+      EOSDK_SMOKE_PASSWORD: ${{ secrets.EOSDK_SMOKE_PASSWORD }}
+      EOSDK_SMOKE_SUMMARY: smoke-summary.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --group dev
+      - run: uv run pytest -m "smoke or smoke_auth or slow" -rs --junitxml=smoke-junit.xml
+      - name: upload the run summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-run-summary
+          path: |
+            smoke-summary.json
+            smoke-junit.xml
+          if-no-files-found: warn

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gitlab.cloudferro.com/data-access/eosdk/-/raw/master/schemas/cli/queryables.schema.json",
+  "title": "eo queryables --json — a collection's filterable attributes",
+  "description": "Emitted by `eo queryables <collection> --json` (src/eosdk/cli/commands/queryables.py) as a JSON ARRAY. Each element is Queryable.model_dump(mode=\"json\") (src/eosdk/models.py::Queryable). `name` is backend-native (`eo:cloud_cover` on STAC, `cloudCover` on OData) and is accepted verbatim as a `--filter` key for the same --protocol — that round trip is the whole point of the command (SPEC §6.5). A collection that advertises no queryables makes the command fail with UnsupportedQueryFeature rather than emit `[]`. Hand-written on purpose: it is a contract, not a projection of the model. `additionalProperties` is true on the queryable object — downstream consumers must tolerate fields added later.",
+  "type": "array",
+  "items": { "$ref": "#/$defs/queryable" },
+  "$defs": {
+    "queryable": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": true,
+      "properties": {
+        "name": {
+          "description": "Backend-native attribute name, usable as-is in `--filter name=<value>` for the same protocol.",
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "description": "Value type, null when the backend declares none. The SDK normalizes to `string | number | integer | boolean | datetime`; the STAC backend passes an unrecognized declared type through verbatim, so this is deliberately not an enum — consumers must treat an unknown name as unknown, not as an error.",
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "raw": {
+          "description": "The untouched backend declaration (a JSON-Schema fragment on STAC, an Attributes entry on OData). Backend-specific by design.",
+          "type": "object"
+        }
+      }
+    }
+  }
+}

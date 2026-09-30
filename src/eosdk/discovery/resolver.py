@@ -1,7 +1,7 @@
-"""Discovery resolver: the object behind ``client.discovery`` (SPEC §6.2).
+"""Discovery resolver: the object behind ``client.discovery``.
 
 Receives only the bootstrap ``platform``/``discovery_url`` strings and a
-transport — never the Settings object (cycle break, SPEC §4.2). Fetches and
+transport — never the Settings object (cycle break). Fetches and
 memoizes the platform document on first use.
 """
 
@@ -69,15 +69,15 @@ class DiscoveryResolver:
         return self._document
 
     def services(self) -> dict[str, Any]:
-        """The parsed discovery document's services mapping (SPEC §7.2)."""
+        """The parsed discovery document's services mapping."""
         return dict(self.document().services)
 
     def refresh(self) -> DiscoveryDocument:
-        """Bust the TTL cache and re-fetch (SPEC §6.2)."""
+        """Bust the TTL cache and re-fetch."""
         return self.document(refresh=True)
 
     def endpoints(self) -> dict[str, str]:
-        """Projected flat endpoint fields (SPEC §6.2 mapping)."""
+        """Projected flat endpoint fields."""
         return project_endpoints(self.document())
 
     def strategies_for(self, backend: str) -> tuple[Strategy, ...]:

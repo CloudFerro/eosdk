@@ -16,7 +16,7 @@ def test_client_resolves_profile_endpoints(tmp_path: Path) -> None:
         resolved = client.config.resolved()
     assert client.config.endpoints.eodata_http == "http://localhost:8082"
     assert resolved["eodata_http"].source == f"profile:local({config})"
-    assert resolved["keycloak_realm"].source == "default"
+    assert resolved["keycloak_realm"].source == "unset"  # no built-in deployment defaults
 
 
 def test_client_kwargs_override(tmp_path: Path) -> None:
@@ -35,6 +35,20 @@ def test_client_importable_from_package_root() -> None:
     assert RootClient is Client
 
 
+def test_search_refuses_unbounded_query(tmp_path: Path) -> None:
+    # The refusal is shared with `eo search`: identical behaviour on both
+    # surfaces (SPEC §6.5). It fires before any endpoint/network use.
+    import pytest
+
+    from eosdk.exceptions import ConfigError
+
+    with Client(cwd=tmp_path, user_config=tmp_path / "missing.toml") as client:
+        with pytest.raises(ConfigError, match="unbounded"):
+            client.search()
+        with pytest.raises(ConfigError, match="unbounded"):
+            client.search(limit=10)  # a bare limit is not a constraint
+
+
 def test_context_manager_closes_transport(tmp_path: Path) -> None:
     client = Client(cwd=tmp_path, user_config=tmp_path / "missing.toml")
     with client:
@@ -51,6 +65,8 @@ def test_odata_catalogue_memoized(tmp_path: Path) -> None:
         "[profiles.local]\n"
         'catalogue_odata = "http://localhost:8083/odata"\n'
         'keycloak = "http://localhost:8180"\n'
+        'keycloak_realm = "eodata"\n'
+        'keycloak_client_id = "eosdk-tests"\n'
     )
     with Client(
         profile="local", cwd=tmp_path, user_config=config, token_cache_dir=tmp_path / "tokens"

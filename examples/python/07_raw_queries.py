@@ -61,9 +61,12 @@ def odata_raw_query(client: Client) -> None:
         for entry in document.get("value", []):
             print(f"[odata raw] {entry.get('Name')}  {entry.get('ContentLength'):,} B")
 
-        # Normalized access still works on the same instance:
-        collections = catalogue.collections()
-        print(f"[odata] {len(collections)} collections")
+        # Normalized access still works on the same instance. Note that
+        # `collections()` is *not* one of the options here: the CSC/OData API
+        # exposes no collection-enumeration endpoint, so the backend refuses it
+        # with UnsupportedQueryFeature — discover collection ids over STAC.
+        queryables = catalogue.queryables("SENTINEL-1")
+        print(f"[odata] {len(queryables)} queryable attributes on SENTINEL-1")
 
 
 def stac_raw_search(client: Client) -> None:

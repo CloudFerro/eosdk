@@ -1,4 +1,4 @@
-"""Query -> OData ``$filter`` translation (SPEC §6.5). Pure — no I/O.
+"""Query -> OData ``$filter`` translation. Pure — no I/O.
 
 Targets the Copernicus-style OData CSC catalogue dialect: ``Collection/Name``,
 ``ContentDate/Start``, ``OData.CSC.Intersects`` and typed ``Attributes/any``

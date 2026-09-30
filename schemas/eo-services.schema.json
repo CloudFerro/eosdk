@@ -37,12 +37,21 @@
       }
     },
     "catalogue": {
-      "description": "Catalogue endpoints. `stac` and `odata` each carry a base URL (and optional api_version).",
+      "description": "Catalogue endpoints. `stac` carries the STAC API landing page URL (used verbatim); `odata` carries a version-free base URL (and optional api_version).",
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "stac": { "$ref": "#/$defs/strategy" },
+        "stac": { "$ref": "#/$defs/stacCatalogue" },
         "odata": { "$ref": "#/$defs/strategy" }
+      }
+    },
+    "stacCatalogue": {
+      "description": "The STAC API landing page (SPEC §6.2). Unlike other services, `url` is not a version-free base: the SDK uses it verbatim and reads the search endpoint from it, so a trailing version segment (e.g. CDSE's `/v1`) is part of the address. STAC API compatibility is checked through the landing page's `conformsTo`, so no `api_version` is accepted.",
+      "type": "object",
+      "required": ["url"],
+      "additionalProperties": false,
+      "properties": {
+        "url": { "$ref": "#/$defs/url" }
       }
     },
     "dataAccess": {

@@ -4,9 +4,6 @@ Python SDK and CLI (`eo`) for Earth Observation services: unified catalogue sear
 (STAC / OData), EOData downloads (HTTP / S3), and fully managed authentication
 (Keycloak JWT, S3 key lifecycle) behind one coherent interface — *search, then download*.
 
-> Status: pre-release, under active development. See [SPEC.md](SPEC.md) for the full
-> specification and roadmap.
-
 ## Highlights
 
 - **Three steps to start your EO adventure: register, install, explore.** Sign up for a

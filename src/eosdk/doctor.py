@@ -1,4 +1,4 @@
-"""Health checks (SPEC §6.8): config, auth, and service probes.
+"""Health checks: config, auth, and service probes.
 
 Checks degrade gracefully: a subsystem that is not configured (or not shipped
 yet — Discovery before Phase 3) reports *skipped* with a reason, never a false
@@ -98,7 +98,7 @@ def _config_section(client: Client) -> Section:
                     label,
                     False,
                     f"base URL ends in a version segment: {value.value}",
-                    hint="bases must be version-free; the SDK appends /vN itself (SPEC §6.3)",
+                    hint="bases must be version-free; the SDK appends /vN itself",
                 )
             )
         else:

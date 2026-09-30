@@ -1,4 +1,4 @@
-"""``eo keys`` — S3 key lifecycle (SPEC §6.4).
+"""``eo keys`` — S3 key lifecycle.
 
 Access ids are public identifiers and printed in full (``revoke`` takes one as
 argument). Secrets are never printed except via the explicit ``--export``

@@ -1,4 +1,4 @@
-"""OData catalogue backend (SPEC §6.5), Copernicus CSC dialect.
+"""OData catalogue backend, Copernicus CSC dialect.
 
 Pagination prefers the service's ``@odata.nextLink`` and falls back to
 ``$skip`` arithmetic; ``len()`` is fed by ``@odata.count`` requested on the
@@ -149,7 +149,7 @@ class ODataCatalogue:
         """Escape hatch: run ``"Products?$filter=..."`` verbatim, return raw JSON.
 
         The caller-provided path/query is passed through untouched — this is
-        the sanctioned exception to the route()-only rule (SPEC §6.5).
+        the sanctioned exception to the route()-only rule.
         """
         base = route(self._base, "odata/v1")
         path, _, query_string = odata_query.partition("?")

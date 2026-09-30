@@ -1,4 +1,4 @@
-"""``eo config`` — init, show, set, use, profiles (SPEC §7.4)."""
+"""``eo config`` — init, show, set, use, profiles."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ def _init_from_platform(
     state: CliState, path: Path, platform: str, *, name: str | None, force: bool
 ) -> tuple[str, str]:
     """Fetch the platform's discovery document now, then pin every resolved
-    endpoint into a profile named after the platform (SPEC §6.2).
+    endpoint into a profile named after the platform.
 
     Returns ``(profile_name, status)``. A discovery-managed profile of the same
     name is resynced wholesale without ``--force``; a user-owned one is a

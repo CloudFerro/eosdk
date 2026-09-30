@@ -1,4 +1,4 @@
-"""S3 Keys Manager client (SPEC §6.4), aligned to the CloudFerro API.
+"""S3 Keys Manager client, aligned to the CloudFerro API.
 
 Real API (https://s3-keys-manager.cloudferro.com/api/user/docs, v1.8.x):
 
@@ -9,7 +9,7 @@ Real API (https://s3-keys-manager.cloudferro.com/api/user/docs, v1.8.x):
 - ``DELETE /credentials/access_id/{access_id}``
 - ``PATCH  /credentials/access_id/{access_id}/secret_key`` — rotate the secret.
 
-The service has **no label concept**, so the SPEC's labeled-reuse policy is
+The service has **no label concept**, so the labeled-reuse policy is
 implemented client-side: labels map to ``access_id`` + secret in a per-profile
 on-disk store (mode 0600). The configured base URL already contains the API
 root (e.g. ``.../api/user``); routes carry no version segment.
@@ -254,7 +254,7 @@ class S3KeysProvider:
         self._store.drop_key(access_key)
 
     def get_or_create(self, label: str) -> S3Credentials:
-        """Labeled-reuse policy (SPEC §6.4 default), implemented client-side."""
+        """Labeled-reuse policy (the default), implemented client-side."""
         cached = self._store.get(label)
         if cached is not None:
             active = {c.access_key: c for c in self.list()}

@@ -1,4 +1,4 @@
-"""Typed, layered configuration with named profiles (SPEC §6.1).
+"""Typed, layered configuration with named profiles.
 
 Profile management mirrors the ``eo config`` commands: :func:`list_profiles`
 and :func:`get_default_profile` read, while :func:`init_profile`,

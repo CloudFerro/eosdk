@@ -1,4 +1,4 @@
-"""Capability matrix and strategy selection (SPEC §6.3, §6.6).
+"""Capability matrix and strategy selection.
 
 The built-in matrix is the source of truth for what each backend/strategy
 *can* do. A discovery document (Phase 3) may only *restrict* it — the
@@ -6,6 +6,9 @@ intersection gate — never extend it. Selection is capability-first, then by
 the module's preference order; deprecated survivors emit a warning naming the
 sunset date and replacement.
 """
+
+# Design reference: SPEC.md §6.3 (strategy selection), §6.6 (the capability
+# matrix) and §6.2 (the intersection gate). Repo-only; not shipped.
 
 from __future__ import annotations
 
@@ -57,7 +60,7 @@ BUILTIN_MATRIX: dict[str, tuple[Strategy, ...]] = {
 def effective_capabilities(
     builtin: frozenset[Capability], advertised: Iterable[str] | None
 ) -> frozenset[Capability]:
-    """SPEC §6.2 intersection gate: discovery can disable, never add."""
+    """Intersection gate: discovery can disable a capability, never add one."""
     if advertised is None:
         return builtin
     advertised_set = {c for c in Capability if c.value in set(advertised)}

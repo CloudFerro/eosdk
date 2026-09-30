@@ -1,4 +1,4 @@
-"""Shared HTTP transport (SPEC §6.7).
+"""Shared HTTP transport.
 
 One ``httpx`` client behind a thin wrapper adding the shared retry/backoff
 policy, quota handling, User-Agent, and the :func:`route` URL builder — the
@@ -55,7 +55,7 @@ def odata_key(value: str) -> str:
     """Quote a string as an OData key literal: ``'...'`` with ``'`` doubled.
 
     Required for ``Nodes({name})`` segments whose names may contain spaces,
-    parentheses, or quotes (SPEC §6.6) — never assemble these with f-strings.
+    parentheses, or quotes — never assemble these with f-strings.
     """
     return "'" + value.replace("'", "''") + "'"
 

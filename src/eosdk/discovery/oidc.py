@@ -1,4 +1,4 @@
-"""Keycloak OIDC endpoint resolution (SPEC §6.2, per-service discovery).
+"""Keycloak OIDC endpoint resolution (per-service discovery).
 
 Config holds only the Keycloak base URL and realm; everything else comes from
 the realm's ``openid-configuration`` document.

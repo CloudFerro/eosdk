@@ -1,4 +1,4 @@
-"""Third-party extension loading via the ``eosdk.plugins`` entry-point group (SPEC §11).
+"""Third-party extension loading via the ``eosdk.plugins`` entry-point group.
 
 A plugin package declares::
 

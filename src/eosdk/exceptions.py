@@ -1,4 +1,4 @@
-"""Exception taxonomy for eosdk (SPEC §8).
+"""Exception taxonomy for eosdk.
 
 Every exception inherits :class:`EosdkError` and carries structured attributes;
 messages always name the failing service and, where possible, the config knob

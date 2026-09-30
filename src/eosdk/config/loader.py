@@ -1,4 +1,4 @@
-"""Configuration resolution chain (SPEC §6.1).
+"""Configuration resolution chain.
 
 Per-field precedence, most specific wins:
 
@@ -12,8 +12,12 @@ Per-field precedence, most specific wins:
    conventions only, e.g. ``s3_region = "default"``; endpoint URLs have none)
 
 The ``platform`` root itself is resolved from local layers only (steps 1-4),
-never from discovery — this breaks the config→discovery cycle (SPEC §4.2).
+never from discovery — this breaks the config→discovery cycle.
 """
+
+# Design reference: SPEC.md §6.1 (per-field precedence) and §4.2 (the
+# config->discovery cycle break). SPEC.md lives in the repository and is not
+# shipped in the distribution, so keep the docstring above self-contained.
 
 from __future__ import annotations
 
@@ -52,7 +56,7 @@ else:
 
 
 class DiscoveryHook(Protocol):
-    """Seam for SPEC §6.1 precedence step 5; the real resolver lands in Phase 3."""
+    """Seam for precedence step 5; the real resolver lands in Phase 3."""
 
     def resolve(self, platform: str) -> dict[str, str]:
         """Return field -> endpoint URL for services the platform advertises."""

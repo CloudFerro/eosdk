@@ -1,4 +1,4 @@
-"""Backend-neutral query translation utilities (SPEC §6.5).
+"""Backend-neutral query translation utilities.
 
 The :class:`~eosdk.models.Query` model lives in ``models.py``; this module owns
 the pieces shared by backend translators: operator parsing of ``filters``

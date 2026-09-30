@@ -1,4 +1,4 @@
-"""``eo`` CLI entry point — a thin typer wrapper over the library (SPEC §7.4)."""
+"""``eo`` CLI entry point — a thin typer wrapper over the library."""
 
 from __future__ import annotations
 

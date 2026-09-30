@@ -2,7 +2,7 @@
 
 Commands that take a product on the command line (``download``, ``list``,
 ``cat``) accept the same two reference shapes, mirroring what each backend can
-address (SPEC §6.6): a bare product id for the HTTP route, or an S3 path
+address: a bare product id for the HTTP route, or an S3 path
 (``s3://…`` / ``/eodata/…``, e.g. from ``eo search --format s3``) for the S3
 route. Keeping the parsing here means all three commands behave identically.
 """

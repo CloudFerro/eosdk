@@ -1,4 +1,4 @@
-"""On-disk TTL cache for discovery documents with offline fallback (SPEC §6.2)."""
+"""On-disk TTL cache for discovery documents with offline fallback."""
 
 from __future__ import annotations
 

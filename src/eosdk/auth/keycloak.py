@@ -1,4 +1,4 @@
-"""Keycloak JWT credential provider (SPEC §6.4).
+"""Keycloak JWT credential provider.
 
 Owns the whole token lifecycle: password and device-flow login, transparent
 access-token refresh with a 30 s expiry leeway, an on-disk cache (mode 0600,
@@ -6,8 +6,8 @@ keyed by profile) shared between processes, and the 401 → one forced refresh �
 retry → ``AuthError`` behaviour, implemented as an ``httpx.Auth`` so every
 service using this provider gets it for free.
 
-The access token is persisted alongside the refresh token (the SPEC mandates
-only the latter); without it every short-lived CLI invocation would pay a
+The access token is persisted alongside the refresh token (only the latter is
+strictly required); without it every short-lived CLI invocation would pay a
 refresh round-trip.
 """
 
@@ -122,7 +122,7 @@ class AuthStatus:
 
 
 class _BearerAuth(httpx.Auth):
-    """Attach the JWT; on 401 force one refresh and retry once (SPEC §6.4).
+    """Attach the JWT; on 401 force one refresh and retry once.
 
     Without a session the request goes out anonymously — public services
     (e.g. the CDSE STAC catalogue) work without login; a 401 then raises the
@@ -326,7 +326,7 @@ class KeycloakAuth:
     # -- token access --------------------------------------------------------
 
     def access_token(self) -> str:
-        """Return a valid access token, refreshing transparently (SPEC §6.4)."""
+        """Return a valid access token, refreshing transparently."""
         with self._lock:
             now = self._now()
             token = self._state.valid_access_token(now)

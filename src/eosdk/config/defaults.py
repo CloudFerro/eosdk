@@ -3,7 +3,7 @@
 There are no built-in endpoint defaults: a deployment is configured locally
 (kwargs, ``EOSDK_*`` env vars, ``eosdk.toml``, user profiles) or bootstrapped
 from a platform's discovery document at
-``{platform}/.well-known/eo-services.json`` (SPEC §6.2).
+``{platform}/.well-known/eo-services.json``.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""S3 download backend (SPEC §6.6): download + list + open.
+"""S3 download backend: download + list + open.
 
 - ``fetch``: ranged multipart GETs with resume (sidecar state, ETag-validated;
   a changed object always restarts — ranges are never spliced across versions).

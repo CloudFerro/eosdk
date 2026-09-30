@@ -1,4 +1,4 @@
-"""Pure resume/range planning for ranged multipart transfers (SPEC §6.6).
+"""Pure resume/range planning for ranged multipart transfers.
 
 No I/O here beyond the sidecar state file helpers: the planner is exhaustively
 unit-testable, and the same plans will feed the async backend later.
@@ -8,6 +8,8 @@ size, validator (ETag), part size, and completed byte ranges. On resume the
 object is re-validated (size + ETag); any mismatch discards the state — ranges
 from different object versions are never spliced together.
 """
+
+# Design reference: SPEC.md §6.6 (the resume protocol). Repo-only; not shipped.
 
 from __future__ import annotations
 

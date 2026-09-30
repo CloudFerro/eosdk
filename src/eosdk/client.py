@@ -1,10 +1,10 @@
-"""The ``Client`` facade — the one import most users need (SPEC §4.1).
+"""The ``Client`` facade — the one import most users need.
 
 Construction is offline: local config layers are resolved and URL-validated,
 but nothing is fetched. Discovery-sourced endpoints stay ``<pending>`` until
-first use of the owning service (SPEC §6.1). Domain modules are constructed
+first use of the owning service. Domain modules are constructed
 lazily and receive resolved endpoints + credential providers — they never see
-config or environment (SPEC §4.2).
+config or environment.
 """
 
 from __future__ import annotations
@@ -270,7 +270,7 @@ class Client:
         raise ConfigError(f"unknown catalogue protocol {protocol!r}", hint="use stac or odata")
 
     def _downloader(self, via: str, capability: Capability) -> Any:
-        """Capability-first dispatch (SPEC §6.3): select before any network."""
+        """Capability-first dispatch: select the backend before any network I/O."""
         from eosdk.eodata.capabilities import BUILTIN_MATRIX, select_strategy
 
         if via not in BUILTIN_MATRIX:
@@ -324,7 +324,7 @@ class Client:
         return self._catalogue(protocol).collections()
 
     def queryables(self, collection: str, *, protocol: str = "stac") -> list[Queryable]:
-        """Filterable attributes a collection advertises (SPEC §6.5).
+        """Filterable attributes a collection advertises.
 
         Names are backend-native and usable directly as ``filters`` keys for
         that protocol. Raises ``UnsupportedQueryFeature`` when the backend
@@ -358,14 +358,14 @@ class Client:
     def list(
         self, product: Product, path: str = "", *, via: str = "http", recursive: bool = False
     ) -> list[Node]:
-        """Files inside a product (SPEC §6.6 Listable)."""
+        """Files inside a product (the ``Listable`` capability)."""
         from eosdk.eodata.capabilities import Capability
 
         backend = self._downloader(via, Capability.LIST)
         return backend.list(product, path, recursive=recursive)  # type: ignore[no-any-return]
 
     def open(self, product: Product, path: str, *, via: str = "s3") -> IO[bytes]:
-        """Ranged reads of one file inside a product (SPEC §6.6 RandomAccess)."""
+        """Ranged reads of one file inside a product (the ``RandomAccess`` capability)."""
         from eosdk.eodata.capabilities import Capability
 
         backend = self._downloader(via, Capability.OPEN)
@@ -373,7 +373,7 @@ class Client:
 
     @property
     def keys(self) -> S3KeysProvider:
-        """The S3 credentials (keys) client (SPEC §6.4)."""
+        """The S3 credentials (keys) client."""
         return self._keys_provider()
 
     def close(self) -> None:

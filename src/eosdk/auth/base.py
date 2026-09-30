@@ -1,6 +1,6 @@
 """Credential provider protocol.
 
-Domain modules never handle raw credentials (SPEC §4.2); they attach the
+Domain modules never handle raw credentials; they attach the
 ``httpx.Auth`` produced here to individual requests.
 """
 

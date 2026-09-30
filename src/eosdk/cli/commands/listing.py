@@ -1,4 +1,4 @@
-"""``eo list`` — list the files inside a product (SPEC §6.6 Listable)."""
+"""``eo list`` — list the files inside a product."""
 
 from __future__ import annotations
 

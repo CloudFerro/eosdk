@@ -10,9 +10,15 @@ explicitly.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-30
+
 ### Added
 
-- schema validator for eo-services
+- `schemas/eo-services.schema.json`, a JSON Schema for the platform discovery
+  document (SPEC §6.2), and `scripts/validate_eo_services.py`, which validates
+  a served or local `eo-services.json` against it plus the semantic checks the
+  schema cannot express (real calendar dates, a usable `/realms/` split, a
+  `replacement` pointing at a missing sibling strategy).
 - CLI commands `eo get`, `eo collections`, `eo queryables`, `eo list`, and
   `eo cat`, mirroring `client.get()`, `client.collections()`,
   `client.queryables()`, `client.list()`, and `client.open()` so the whole
@@ -301,7 +307,8 @@ explicitly.
   policy, `route()` URL builder, and OData key encoding.
 - CI: ruff + mypy strict + pytest on Python 3.10–3.13, build + wheel smoke.
 
-[unreleased]: https://github.com/CloudFerro/eosdk/compare/v0.4.0...master
+[unreleased]: https://github.com/CloudFerro/eosdk/compare/v0.5.0...master
+[0.5.0]: https://github.com/CloudFerro/eosdk/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/CloudFerro/eosdk/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/CloudFerro/eosdk/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/CloudFerro/eosdk/compare/v0.1.0...v0.2.0

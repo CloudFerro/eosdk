@@ -301,8 +301,8 @@ explicitly.
   policy, `route()` URL builder, and OData key encoding.
 - CI: ruff + mypy strict + pytest on Python 3.10–3.13, build + wheel smoke.
 
-[unreleased]: https://gitlab.cloudferro.com/data-access/eosdk/-/compare/v0.4.0...master
-[0.4.0]: https://gitlab.cloudferro.com/data-access/eosdk/-/compare/v0.3.0...v0.4.0
-[0.3.0]: https://gitlab.cloudferro.com/data-access/eosdk/-/compare/v0.2.0...v0.3.0
-[0.2.0]: https://gitlab.cloudferro.com/data-access/eosdk/-/compare/v0.1.0...v0.2.0
-[0.1.0]: https://gitlab.cloudferro.com/data-access/eosdk/-/tags/v0.1.0
+[unreleased]: https://github.com/CloudFerro/eosdk/compare/v0.4.0...master
+[0.4.0]: https://github.com/CloudFerro/eosdk/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/CloudFerro/eosdk/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/CloudFerro/eosdk/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/CloudFerro/eosdk/releases/tag/v0.1.0

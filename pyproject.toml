@@ -35,9 +35,9 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://gitlab.cloudferro.com/data-access/eosdk"
-Issues = "https://gitlab.cloudferro.com/data-access/eosdk/-/issues"
-Changelog = "https://gitlab.cloudferro.com/data-access/eosdk/-/blob/master/CHANGELOG.md"
+Repository = "https://github.com/CloudFerro/eosdk"
+Issues = "https://github.com/CloudFerro/eosdk/issues"
+Changelog = "https://github.com/CloudFerro/eosdk/blob/master/CHANGELOG.md"
 
 [project.scripts]
 eo = "eosdk.cli.main:app"

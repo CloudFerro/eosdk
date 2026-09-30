@@ -39,12 +39,11 @@ require a login**.
 **1 — Register** for a free account at **https://dataspace.copernicus.eu/** and confirm
 your email.
 
-**2 — Install** (requires [uv](https://docs.astral.sh/uv/); see
-[Installation](#installation) for alternatives):
+**2 — Install** the `eo` CLI from PyPI (Python 3.10+; see
+[Installation](#installation) for pip, the library, and installing from source):
 
 ```bash
-git clone <repo-url> && cd eosdk
-uv tool install --editable .   # makes `eo` available everywhere
+uv tool install eosdk   # or: pipx install eosdk — makes `eo` available everywhere
 eo --help
 ```
 
@@ -105,7 +104,7 @@ resumes partial files, `--via http` restarts them.
 ## The Python library
 
 The library reuses the session cached by `eo auth login`, so most programs never log in
-themselves. Install into a project with `uv sync` (or add the package as a dependency).
+themselves. Add it to a project with `uv add eosdk` (or `pip install eosdk`).
 
 ```python
 import getpass
@@ -127,8 +126,9 @@ products = client.search(
 client.download(products, target="./data", via="http", concurrency=4)
 ```
 
-See [examples/python/](examples/python/) for ranged reads, S3 keys, error handling,
-raw-query escape hatches, and plugin backends.
+See [examples/python/](https://github.com/CloudFerro/eosdk/tree/master/examples/python)
+for ranged reads, S3 keys, error handling, raw-query escape hatches, and plugin
+backends.
 
 ## Setting up the platform
 
@@ -183,7 +183,7 @@ one deployment.
 
 **Environment variables** — good for CI and one-off overrides. Every endpoint has an
 `EOSDK_*_URL` variable (full map in
-[src/eosdk/config/defaults.py](src/eosdk/config/defaults.py)):
+[src/eosdk/config/defaults.py](https://github.com/CloudFerro/eosdk/blob/master/src/eosdk/config/defaults.py)):
 
 ```bash
 export EOSDK_PLATFORM=https://platform.example.eu   # platform root; endpoints discovered
@@ -206,10 +206,36 @@ from a static bucket/CDN), the main domain root, or any URL via `discovery_url` 
 
 ## Installation
 
-Not yet published to PyPI. Requires [uv](https://docs.astral.sh/uv/). From a clone,
-either install the CLI globally:
+eosdk is published on PyPI as [`eosdk`](https://pypi.org/project/eosdk/) and requires
+Python 3.10 or newer. One package ships both the `eo` CLI and the Python library.
+
+**The `eo` CLI** — install it as a standalone tool in its own isolated environment,
+available on your `PATH` everywhere:
 
 ```bash
+uv tool install eosdk   # or: pipx install eosdk
+uv tool upgrade eosdk   # later, to update (pipx: pipx upgrade eosdk)
+```
+
+To try it without installing anything, `uvx --from eosdk eo --help` runs it from a
+throwaway environment.
+
+**The Python library** — add it to your project's dependencies; the `eo` command is
+installed into that environment too:
+
+```bash
+uv add eosdk            # or: pip install eosdk
+```
+
+Pre-1.0, a minor release may contain breaking changes (always called out in the
+[changelog](https://github.com/CloudFerro/eosdk/blob/master/CHANGELOG.md)), so pin the
+minor series in projects: `uv add "eosdk~=0.5.0"` (that is, `>=0.5.0, <0.6`).
+
+**From source** — for development, or to run unreleased changes. From a clone, either
+install the CLI globally:
+
+```bash
+git clone https://github.com/CloudFerro/eosdk && cd eosdk
 uv tool install --editable .   # `--editable` picks up local code changes
 ```
 
@@ -222,15 +248,19 @@ uv run eo --help               # or: source .venv/bin/activate && eo --help
 
 ## Examples
 
-[examples/](examples/) contains runnable, commented examples for both surfaces:
-[examples/python/](examples/python/) covers search, downloads, ranged reads, auth and
-S3 keys, configuration, error handling, raw queries, and plugin backends;
-[examples/cli/](examples/cli/) are annotated `eo` walkthroughs.
+[examples/](https://github.com/CloudFerro/eosdk/tree/master/examples) contains
+runnable, commented examples for both surfaces:
+[examples/python/](https://github.com/CloudFerro/eosdk/tree/master/examples/python)
+covers search, downloads, ranged reads, auth and S3 keys, configuration, error
+handling, raw queries, and plugin backends;
+[examples/cli/](https://github.com/CloudFerro/eosdk/tree/master/examples/cli) are
+annotated `eo` walkthroughs.
 
 ## Local discovery endpoint (Docker)
 
-[docker/discovery/](docker/discovery/) serves a sample discovery document at the
-well-known path — useful for developing against discovery without a real platform:
+[docker/discovery/](https://github.com/CloudFerro/eosdk/tree/master/docker/discovery)
+serves a sample discovery document at the well-known path — useful for developing
+against discovery without a real platform (run from a clone):
 
 ```bash
 docker build -t eosdk-discovery docker/discovery
@@ -264,12 +294,16 @@ frequently, as S3 credentials are not meant to be temporary.
 
 ## Documentation
 
-- **[docs/](docs/)** — user guide built with [MkDocs](https://www.mkdocs.org/):
-  [quickstart](docs/quickstart.md), [configuration](docs/configuration.md),
-  [CLI reference](docs/cli.md), [errors](docs/errors.md), and the
-  [Python API reference](docs/reference.md). Build and preview locally with
-  `uv run mkdocs serve`.
-- **[CHANGELOG.md](CHANGELOG.md)** — notable changes per release, following
+- **[docs/](https://github.com/CloudFerro/eosdk/tree/master/docs)** — user guide
+  built with [MkDocs](https://www.mkdocs.org/):
+  [quickstart](https://github.com/CloudFerro/eosdk/blob/master/docs/quickstart.md),
+  [configuration](https://github.com/CloudFerro/eosdk/blob/master/docs/configuration.md),
+  [CLI reference](https://github.com/CloudFerro/eosdk/blob/master/docs/cli.md),
+  [errors](https://github.com/CloudFerro/eosdk/blob/master/docs/errors.md), and the
+  [Python API reference](https://github.com/CloudFerro/eosdk/blob/master/docs/reference.md).
+  Build and preview locally with `uv run mkdocs serve`.
+- **[CHANGELOG.md](https://github.com/CloudFerro/eosdk/blob/master/CHANGELOG.md)** —
+  notable changes per release, following
   [Keep a Changelog](https://keepachangelog.com/); the project uses
   [Semantic Versioning](https://semver.org/).
 
@@ -292,4 +326,4 @@ eosdk is developed and maintained by
 ## License
 
 eosdk is licensed under the **Apache License, Version 2.0**. See the
-[LICENSE](LICENSE) file for the full text.
+[LICENSE](https://github.com/CloudFerro/eosdk/blob/master/LICENSE) file for the full text.

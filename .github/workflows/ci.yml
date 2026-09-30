@@ -14,8 +14,8 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
       - run: uv sync --group dev
@@ -35,8 +35,8 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
       - run: uv sync --group dev --python ${{ matrix.python }}
@@ -53,8 +53,8 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv sync --group docs
       - run: uv run --group docs mkdocs build --strict
 
@@ -62,8 +62,8 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv build
       - run: uvx twine check dist/*
       - name: smoke-install built wheel
@@ -85,15 +85,15 @@ jobs:
       EOSDK_SMOKE_PASSWORD: ${{ secrets.EOSDK_SMOKE_PASSWORD }}
       EOSDK_SMOKE_SUMMARY: smoke-summary.json
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
       - run: uv sync --group dev
       - run: uv run pytest -m "smoke or smoke_auth or slow" -rs --junitxml=smoke-junit.xml
       - name: upload the run summary
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: smoke-run-summary
           path: |

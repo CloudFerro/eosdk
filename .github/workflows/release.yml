@@ -11,8 +11,8 @@ jobs:
       matrix:
         python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv sync --group dev --python ${{ matrix.python }}
       - run: uv run ruff check .
       - run: uv run mypy
@@ -26,8 +26,8 @@ jobs:
       id-token: write # PyPI Trusted Publishing (OIDC) — no long-lived secrets
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv build
       - run: uvx twine check dist/*
       # rc tags go to TestPyPI; final tags to PyPI.
@@ -40,7 +40,7 @@ jobs:
         if: ${{ !contains(github.ref_name, 'rc') }}
         run: uv publish
       - name: GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/*
           generate_release_notes: true

@@ -68,6 +68,20 @@ dev = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/eosdk"]
 
+# The sdist is a buildable source tree, not a repo mirror. SPEC.md and the test
+# plan are design documents for contributors (they live in the repo, and the
+# README links to them there); `data/` holds EOData that smoke tests download
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "SPEC.md",
+    "RELEASING.md",
+    "smoke-summary.json",
+    ".claude",
+    "data",
+    "site",
+    "benchmarks",
+]
+
 [tool.ruff]
 line-length = 100
 src = ["src", "tests"]
